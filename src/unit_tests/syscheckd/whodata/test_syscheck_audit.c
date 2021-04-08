@@ -1064,7 +1064,7 @@ void test_audit_create_rules_file(void **state) {
     expect_function_call(__wrap_pthread_mutex_lock);
     expect_function_call(__wrap_pthread_mutex_unlock);
 
-    expect_string(__wrap__mdebug2, formatted_msg, "(6360): Added directory '/test0' to audit rules file.");
+    expect_string(__wrap__mdebug2, formatted_msg, "(6361): Added directory '/test0' to audit rules file.");
 
     expect_any(__wrap_fprintf, __stream);
     expect_string(__wrap_fprintf, formatted_msg, "-w /test0 -p wa -k wazuh_fim\n");
@@ -1072,6 +1072,8 @@ void test_audit_create_rules_file(void **state) {
 
     expect_any(__wrap_fclose, _File);
     will_return(__wrap_fclose, 0);
+
+    expect_abspath(AUDIT_RULES_FILE, 0);
 
     expect_string(__wrap_symlink, path1, AUDIT_RULES_FILE);
     expect_string(__wrap_symlink, path2, AUDIT_RULES_LINK);
@@ -1106,7 +1108,7 @@ void test_audit_create_rules_file_fclose_fail(void **state) {
     expect_function_call(__wrap_pthread_mutex_lock);
     expect_function_call(__wrap_pthread_mutex_unlock);
 
-    expect_string(__wrap__mdebug2, formatted_msg, "(6360): Added directory '/test0' to audit rules file.");
+    expect_string(__wrap__mdebug2, formatted_msg, "(6361): Added directory '/test0' to audit rules file.");
 
     expect_any(__wrap_fprintf, __stream);
     expect_string(__wrap_fprintf, formatted_msg, "-w /test0 -p wa -k wazuh_fim\n");
@@ -1130,7 +1132,7 @@ void test_audit_create_rules_file_symlink_exist(void **state) {
     expect_function_call(__wrap_pthread_mutex_lock);
     expect_function_call(__wrap_pthread_mutex_unlock);
 
-    expect_string(__wrap__mdebug2, formatted_msg, "(6360): Added directory '/test0' to audit rules file.");
+    expect_string(__wrap__mdebug2, formatted_msg, "(6361): Added directory '/test0' to audit rules file.");
 
     expect_any(__wrap_fprintf, __stream);
     expect_string(__wrap_fprintf, formatted_msg, "-w /test0 -p wa -k wazuh_fim\n");
@@ -1138,6 +1140,8 @@ void test_audit_create_rules_file_symlink_exist(void **state) {
 
     expect_any(__wrap_fclose, _File);
     will_return(__wrap_fclose, 0);
+
+    expect_abspath(AUDIT_RULES_FILE, 0);
 
     expect_string(__wrap_symlink, path1, AUDIT_RULES_FILE);
     expect_string(__wrap_symlink, path2, AUDIT_RULES_LINK);
@@ -1168,7 +1172,7 @@ void test_audit_create_rules_file_unlink_fail(void **state) {
     expect_function_call(__wrap_pthread_mutex_lock);
     expect_function_call(__wrap_pthread_mutex_unlock);
 
-    expect_string(__wrap__mdebug2, formatted_msg, "(6360): Added directory '/test0' to audit rules file.");
+    expect_string(__wrap__mdebug2, formatted_msg, "(6361): Added directory '/test0' to audit rules file.");
 
     expect_any(__wrap_fprintf, __stream);
     expect_string(__wrap_fprintf, formatted_msg, "-w /test0 -p wa -k wazuh_fim\n");
@@ -1176,6 +1180,8 @@ void test_audit_create_rules_file_unlink_fail(void **state) {
 
     expect_any(__wrap_fclose, _File);
     will_return(__wrap_fclose, 0);
+
+    expect_abspath(AUDIT_RULES_FILE, 0);
 
     expect_string(__wrap_symlink, path1, AUDIT_RULES_FILE);
     expect_string(__wrap_symlink, path2, AUDIT_RULES_LINK);
@@ -1203,7 +1209,7 @@ void test_audit_create_rules_file_symlink_fail(void **state) {
     expect_function_call(__wrap_pthread_mutex_lock);
     expect_function_call(__wrap_pthread_mutex_unlock);
 
-    expect_string(__wrap__mdebug2, formatted_msg, "(6360): Added directory '/test0' to audit rules file.");
+    expect_string(__wrap__mdebug2, formatted_msg, "(6361): Added directory '/test0' to audit rules file.");
 
     expect_any(__wrap_fprintf, __stream);
     expect_string(__wrap_fprintf, formatted_msg, "-w /test0 -p wa -k wazuh_fim\n");
@@ -1211,6 +1217,8 @@ void test_audit_create_rules_file_symlink_fail(void **state) {
 
     expect_any(__wrap_fclose, _File);
     will_return(__wrap_fclose, 0);
+
+    expect_abspath(AUDIT_RULES_FILE, 0);
 
     expect_string(__wrap_symlink, path1, AUDIT_RULES_FILE);
     expect_string(__wrap_symlink, path2, AUDIT_RULES_LINK);
