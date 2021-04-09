@@ -68,6 +68,20 @@ If Not objFSO.fileExists(home_dir & "client.keys") Then
 End If
 
 If objFSO.fileExists(home_dir & "ossec.conf") Then
+
+	If objFSO.fileExists(home_dir & "ossec.log") Then
+    		objFSO.DeleteFile(home_dir & "ossec.log")
+	End If
+
+	If objFSO.fileExists(home_dir & "ossec.json") Then
+    		objFSO.DeleteFile(home_dir & "ossec.json")
+	End If
+
+	If objFSO.folderExists(home_dir & "logs\") Then
+    		objFSO.DeleteFolder(home_dir & "logs")
+		objFSO.CreateFolder(home_dir & "logs")
+	End If
+
     ' Reading ossec.conf file
     Const ForReading = 1
     Set objFile = objFSO.OpenTextFile(home_dir & "ossec.conf", ForReading)
