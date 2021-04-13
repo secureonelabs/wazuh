@@ -5233,7 +5233,7 @@ components:
     resource_list:
       in: query
       name: resource
-      description: List of current RBAC's resources.
+      description: "List of current RBAC's resources"
       schema:
         type: string
         enum:
@@ -5265,7 +5265,7 @@ components:
     xml_filename:
       in: query
       name: filename
-      description: "Filter by filename of one or more rule or decoder files."
+      description: "Filter by filename of one or more rule or decoder files"
       schema:
         type: array
         items:
@@ -5274,12 +5274,21 @@ components:
     xml_filename_path:
       in: path
       name: filename
-      description: "Filename (rule or decoder) to download/upload/edit file."
+      description: "Filename (rule or decoder) to download/upload/edit file"
       required: true
       schema:
         type: string
         format: xml_filename_path
-
+    resource_type:
+      in: query
+      name: resource_type
+      description: "Filter by RBAC security resource protection level"
+      schema:
+        type: string
+        enum:
+          - 'default'
+          - 'protected'
+          - 'user'
 
 tags:
   - name: API Info
@@ -14364,6 +14373,7 @@ paths:
         - $ref: '#/components/parameters/search'
         - $ref: '#/components/parameters/select'
         - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/resource_type'
         - $ref: '#/components/parameters/wait_for_complete'
       responses:
         '200':
@@ -14385,10 +14395,12 @@ paths:
                         allow_run_as: true
                         roles:
                           - 2
+                        resource_type: "default"
                       - id: 4
                         username: guest
                         allow_run_as: false
                         roles: []
+                        resource_type: "default"
                       - id: 5
                         username: normal
                         allow_run_as: false
@@ -14396,15 +14408,18 @@ paths:
                           - 4
                           - 5
                           - 6
+                        resource_type: "default"
                       - id: 6
                         username: ossec
                         allow_run_as: true
                         roles:
                           - 2
                           - 5
+                        resource_type: "default"
                       - username: python
                         allow_run_as: true
                         roles: []
+                        resource_type: "default"
                       - id: 7
                         username: rbac
                         allow_run_as: false
@@ -14412,15 +14427,18 @@ paths:
                           - 3
                           - 4
                           - 5
+                        resource_type: "default"
                       - id: 1
                         username: wazuh
                         allow_run_as: true
                         roles:
                           - 1
+                        resource_type: "default"
                       - id: 2
                         username: wazuh-wui
                         allow_run_as: true
                         roles: []
+                        resource_type: "default"
                     failed_items: []
                     total_affected_items: 8
                     total_failed_items: 0
@@ -14625,6 +14643,7 @@ paths:
         - $ref: '#/components/parameters/search'
         - $ref: '#/components/parameters/select'
         - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/resource_type'
         - $ref: '#/components/parameters/wait_for_complete'
       responses:
         '200':
@@ -14649,6 +14668,7 @@ paths:
                         - 1
                       rules:
                         - 1
+                      resource_type: "default"
                     - id: 2
                       name: 'normal_user'
                       policies:
@@ -14658,6 +14678,7 @@ paths:
                         - 3
                       rules:
                         - 3
+                      resource_type: "default"
                   total_affected_items: 2
                 message: "All specified roles were returned"
                 error: 0
@@ -14857,6 +14878,7 @@ paths:
         - $ref: '#/components/parameters/search'
         - $ref: '#/components/parameters/select'
         - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/resource_type'
         - $ref: '#/components/parameters/wait_for_complete'
       responses:
         '200':
@@ -14879,11 +14901,13 @@ paths:
                         FIND:
                           r'^auth[a-zA-Z]+$':
                             - "administrator"
+                      resource_type: "default"
                     - id: 2
                       name: "limit_access_rule"
                       rule:
                         MATCH:
                           privileges: 'limit_access'
+                      resource_type: "default"
                   total_affected_items: 2
                 message: "All specified security rules were returned"
                 error: 0
@@ -15088,6 +15112,7 @@ paths:
         - $ref: '#/components/parameters/search'
         - $ref: '#/components/parameters/select'
         - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/resource_type'
         - $ref: '#/components/parameters/wait_for_complete'
       responses:
         '200':
@@ -15112,6 +15137,7 @@ paths:
                         effect: allow
                         resources:
                           - "*:*"
+                      resource_type: "default"
                     - id: 2
                       name: test_i
                       policy:
@@ -15122,6 +15148,7 @@ paths:
                           - agent:id:004
                           - agent:id:005
                           - agent:id:006
+                      resource_type: "default"
                   total_affected_items: 2
                 message: "All specified policies were returned"
                 error: 0
