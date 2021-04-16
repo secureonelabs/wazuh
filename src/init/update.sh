@@ -423,6 +423,8 @@ UpdateOldVersions()
     # Update versions previous to Wazuh 5.0.0, which is a breaking change
     if [ "X$1" = "Xyes" ]; then
 
+        echo "Renaming and deleting old files..."
+
         OSSEC_CONF_FILE="$PREINSTALLEDDIR/etc/ossec.conf"
         OSSEC_CONF_FILE_BACKUP="$PREINSTALLEDDIR/etc/ossec.conf.backup"
 
@@ -469,6 +471,19 @@ UpdateOldVersions()
             if [ -f "$OLD_SHARED_FILE" ]; then
                 rm $OLD_SHARED_FILE
             fi
+        fi
+
+        OSSEC_LOG_FILE="$PREINSTALLEDDIR/logs/ossec.log"
+        OSSEC_JSON_FILE="$PREINSTALLEDDIR/logs/ossec.json"
+        LOG_WAZUH_FOLDER="$PREINSTALLEDDIR/logs/wazuh"
+
+        # Remove ossec.log and ossec.json
+        rm -v $OSSEC_LOG_FILE
+        rm -v $OSSEC_JSON_FILE
+
+        # Remove all rotated logs
+        if [ -d $LOG_WAZUH_FOLDER ]; then
+            rm -rfv $LOG_WAZUH_FOLDER/*
         fi
 
         # If it is Wazuh 2.0 or newer, exit
