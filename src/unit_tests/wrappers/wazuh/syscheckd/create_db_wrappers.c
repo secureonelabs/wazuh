@@ -22,15 +22,13 @@ void __wrap_fim_checker(char *path,
     check_expected(report);
 }
 
-int __wrap_fim_configuration_directory(const char *path,
-                                       const char *entry) {
+int __wrap_fim_configuration_directory(const char *path) {
     check_expected(path);
-    check_expected(entry);
     return mock();
 }
 
 cJSON *__wrap_fim_entry_json(const char * path,
-                             __attribute__((unused)) fim_entry_data * data) {
+                             __attribute__((unused)) fim_file_data * data) {
     check_expected(path);
     return mock_type(cJSON*);
 }
@@ -44,7 +42,7 @@ void __wrap_fim_realtime_event(char *file) {
 }
 
 int __wrap_fim_registry_event(__attribute__((unused)) char *key,
-                              __attribute__((unused)) fim_entry_data *data,
+                              __attribute__((unused)) fim_file_data *data,
                               __attribute__((unused)) int pos) {
     return mock();
 }
@@ -63,4 +61,19 @@ int __wrap_fim_whodata_event(whodata_evt * w_evt)
     if (w_evt->ppid) check_expected(w_evt->ppid);
 #endif
     return 1;
+}
+
+void expect_fim_checker_call(const char *path, int w_evt, int report) {
+    expect_string(__wrap_fim_checker, path, path);
+    expect_value(__wrap_fim_checker, w_evt, w_evt);
+    expect_value(__wrap_fim_checker, report, report);
+}
+
+void expect_fim_configuration_directory_call(const char *path, int ret) {
+    expect_string(__wrap_fim_configuration_directory, path, path);
+    will_return(__wrap_fim_configuration_directory, ret);
+}
+
+void __wrap_free_entry(__attribute__((unused)) fim_entry *entry) {
+    return;
 }

@@ -18,17 +18,29 @@ from wazuh.core import common
 from wazuh.core.configuration import get_ossec_conf
 from wazuh.core.exception import WazuhException, WazuhError, WazuhInternalError
 from wazuh.core.results import WazuhResult
+from wazuh.core.wazuh_socket import create_wazuh_socket_message
 from wazuh.core.wlogging import WazuhLogger
 
 logger = logging.getLogger('wazuh')
-execq_lockfile = join(common.ossec_path, "var/run/.api_execq_lock")
+execq_lockfile = join(common.wazuh_path, "var/run/.api_execq_lock")
 
 
 def read_cluster_config(config_file=common.ossec_conf) -> typing.Dict:
-    """
-    Reads the cluster configuration
+    """Read cluster configuration from ossec.conf.
 
-    :return: Dictionary with cluster configuration.
+    If some fields are missing in the ossec.conf cluster configuration, they are replaced
+    with default values.
+    If there is no cluster configuration at all, the default configuration is marked as disabled.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to configuration file.
+
+    Returns
+    -------
+    config_cluster : dict
+        Dictionary with cluster configuration.
     """
     cluster_default_configuration = {
         'disabled': False,
@@ -46,7 +58,7 @@ def read_cluster_config(config_file=common.ossec_conf) -> typing.Dict:
         config_cluster = get_ossec_conf(section='cluster', conf_file=config_file)['cluster']
     except WazuhException as e:
         if e.code == 1106:
-            # if no cluster configuration is present in ossec.conf, return default configuration but disabling it.
+            # If no cluster configuration is present in ossec.conf, return default configuration but disabling it.
             cluster_default_configuration['disabled'] = True
             return cluster_default_configuration
         else:
@@ -54,7 +66,7 @@ def read_cluster_config(config_file=common.ossec_conf) -> typing.Dict:
     except Exception as e:
         raise WazuhError(3006, extra_message=str(e))
 
-    # if any value is missing from user's cluster configuration, add the default one:
+    # If any value is missing from user's cluster configuration, add the default one.
     for value_name in set(cluster_default_configuration.keys()) - set(config_cluster.keys()):
         config_cluster[value_name] = cluster_default_configuration[value_name]
 
@@ -68,24 +80,8 @@ def read_cluster_config(config_file=common.ossec_conf) -> typing.Dict:
         config_cluster['disabled'] = True
     elif not isinstance(config_cluster['disabled'], bool):
         raise WazuhError(3004,
-                         extra_message="Allowed values for 'disabled' field are 'yes' and 'no'. Found: '{}'"
-                         .format(config_cluster['disabled']))
-
-    # if config_cluster['node_name'].upper() == '$HOSTNAME':
-    #     # The HOSTNAME environment variable is not always available in os.environ so use socket.gethostname() instead
-    #     config_cluster['node_name'] = gethostname()
-
-    # if config_cluster['node_name'].upper() == '$NODE_NAME':
-    #     if 'NODE_NAME' in environ:
-    #         config_cluster['node_name'] = environ['NODE_NAME']
-    #     else:
-    #         raise WazuhException(3006, 'Unable to get the $NODE_NAME environment variable')
-
-    # if config_cluster['node_type'].upper() == '$NODE_TYPE':
-    #     if 'NODE_TYPE' in environ:
-    #         config_cluster['node_type'] = environ['NODE_TYPE']
-    #     else:
-    #         raise WazuhException(3006, 'Unable to get the $NODE_TYPE environment variable')
+                         extra_message=f"Allowed values for 'disabled' field are 'yes' and 'no'. "
+                                       f"Found: '{config_cluster['disabled']}'")
 
     if config_cluster['node_type'] == 'client':
         logger.info("Deprecated node type 'client'. Using 'worker' instead.")
@@ -95,17 +91,18 @@ def read_cluster_config(config_file=common.ossec_conf) -> typing.Dict:
 
 
 def get_manager_status() -> typing.Dict:
+    """Get the current status of each process of the manager.
+
+    Returns
+    -------
+    data : dict
+        Dict whose keys are daemons and the values are the status.
     """
-    Returns the Manager processes that are running.
+    processes = ['wazuh-agentlessd', 'wazuh-analysisd', 'wazuh-authd', 'wazuh-csyslogd', 'wazuh-dbd', 'wazuh-monitord',
+                 'wazuh-execd', 'wazuh-integratord', 'wazuh-logcollector', 'wazuh-maild', 'wazuh-remoted',
+                 'wazuh-reportd', 'wazuh-syscheckd', 'wazuh-clusterd', 'wazuh-modulesd', 'wazuh-db', 'wazuh-apid']
 
-    :return: Dictionary (keys: status, daemon).
-    """
-
-    processes = ['ossec-agentlessd', 'ossec-analysisd', 'ossec-authd', 'ossec-csyslogd', 'ossec-dbd', 'ossec-monitord',
-                 'ossec-execd', 'ossec-integratord', 'ossec-logcollector', 'ossec-maild', 'ossec-remoted',
-                 'ossec-reportd', 'ossec-syscheckd', 'wazuh-clusterd', 'wazuh-modulesd', 'wazuh-db', 'wazuh-apid']
-
-    data, pidfile_regex, run_dir = {}, re.compile(r'.+\-(\d+)\.pid$'), join(common.ossec_path, 'var/run')
+    data, pidfile_regex, run_dir = {}, re.compile(r'.+\-(\d+)\.pid$'), join(common.wazuh_path, 'var/run')
     for process in processes:
         pidfile = glob(join(run_dir, f"{process}-*.pid"))
         if exists(join(run_dir, f'{process}.failed')):
@@ -115,10 +112,15 @@ def get_manager_status() -> typing.Dict:
         elif exists(join(run_dir, f'{process}.start')):
             data[process] = 'starting'
         elif pidfile:
-            process_pid = pidfile_regex.match(pidfile[0]).group(1)
-            # if a pidfile exists but the process is not running, it means the process crashed and
-            # wasn't able to remove its own pidfile.
-            data[process] = 'running' if exists(join('/proc', process_pid)) else 'failed'
+            # Iterate on pidfiles looking for the pidfile which has his pid in /proc,
+            # if the loop finishes, all pidfiles exist but their processes are not running,
+            # it means each process crashed and was not able to remove its own pidfile.
+            data[process] = 'failed'
+            for pid in pidfile:
+                if exists(join('/proc', pidfile_regex.match(pid).group(1))):
+                    data[process] = 'running'
+                    break
+
         else:
             data[process] = 'stopped'
 
@@ -126,28 +128,45 @@ def get_manager_status() -> typing.Dict:
 
 
 def get_cluster_status() -> typing.Dict:
-    """
-    Returns the cluster status
+    """Get cluster status.
 
-    :return: Dictionary with cluster status
+    Returns
+    -------
+    dict
+        Cluster status.
     """
     return {"enabled": "no" if read_cluster_config()['disabled'] else "yes",
             "running": "yes" if get_manager_status()['wazuh-clusterd'] == 'running' else "no"}
 
 
-def manager_restart():
-    """
-    Restart Wazuh manager.
+def manager_restart() -> WazuhResult:
+    """Restart Wazuh manager.
 
-    :return: Confirmation message.
+    Send JSON message with the 'restart-wazuh' command to common.EXECQ socket.
+
+    Raises
+    ------
+    WazuhInternalError(1901)
+        If the socket path doesn't exist.
+    WazuhInternalError(1902)
+        If there is a socket connection error.
+    WazuhInternalError(1014)
+        If there is a socket communication error.
+
+    Returns
+    -------
+    WazuhResult
+        Confirmation message.
     """
     lock_file = open(execq_lockfile, 'a+')
     fcntl.lockf(lock_file, fcntl.LOCK_EX)
     try:
         # execq socket path
         socket_path = common.EXECQ
-        # msg for restarting Wazuh manager
-        msg = 'restart-wazuh '
+        # json msg for restarting Wazuh manager
+        msg = json.dumps(create_wazuh_socket_message(origin={'module': 'api/framework'},
+                                                     command=common.RESTART_WAZUH_COMMAND,
+                                                     parameters={'extra_args': [], 'alert': {}}))
         # initialize socket
         if exists(socket_path):
             try:
@@ -173,10 +192,18 @@ def manager_restart():
 
 @lru_cache()
 def get_cluster_items():
+    """Load and return the content of cluster.json file as a dict.
+
+    Returns
+    -------
+    cluster_items : dict
+        Dictionary with the information inside cluster.json file.
+    """
     try:
         here = os.path.abspath(os.path.dirname(__file__))
-        with open(os.path.join(common.ossec_path, here, 'cluster.json')) as f:
+        with open(os.path.join(common.wazuh_path, here, 'cluster.json')) as f:
             cluster_items = json.load(f)
+        # Rebase permissions.
         list(map(lambda x: setitem(x, 'permissions', int(x['permissions'], base=0)),
                  filter(lambda x: 'permissions' in x, cluster_items['files'].values())))
         return cluster_items
@@ -186,7 +213,18 @@ def get_cluster_items():
 
 @lru_cache()
 def read_config(config_file=common.ossec_conf):
-    """ Returns the cluster configuration. """
+    """Get the cluster configuration.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to configuration file.
+
+    Returns
+    -------
+    dict
+        Dictionary with cluster configuration.
+    """
     return read_cluster_config(config_file=config_file)
 
 
@@ -197,17 +235,21 @@ context_subtag: ContextVar[str] = ContextVar('subtag', default='')
 
 class ClusterFilter(logging.Filter):
     """
-    Adds cluster related information into cluster logs.
+    Add cluster related information into cluster logs.
     """
 
     def __init__(self, tag: str, subtag: str, name: str = ''):
-        """
-        Class constructor
+        """Class constructor.
 
-        :param tag: First tag to show in the log - Usually describes class
-        :param subtag: Second tag to show in the log - Usually describes function
-        :param name: If name is specified, it names a logger which, together with its children, will have its events
-                     allowed through the filter. If name is the empty string, allows every event.
+        Parameters
+        ----------
+        tag : str
+            First tag to show in the log - Usually describes class.
+        subtag : str
+            Second tag to show in the log - Usually describes function.
+        name : str
+            If name is specified, it names a logger which, together with its children, will have its events
+            allowed through the filter. If name is the empty string, allows every event.
         """
         super().__init__(name=name)
         self.tag = tag
@@ -227,7 +269,7 @@ class ClusterFilter(logging.Filter):
 
 class ClusterLogger(WazuhLogger):
     """
-    Defines the logger used by wazuh-clusterd.
+    Define the logger used by wazuh-clusterd.
     """
 
     def setup_logger(self):

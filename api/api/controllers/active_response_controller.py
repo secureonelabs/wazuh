@@ -13,13 +13,13 @@ from api.models.base_model_ import Body
 from api.util import remove_nones_to_dict, raise_if_exc
 from wazuh.core.cluster.dapi.dapi import DistributedAPI
 
-logger = logging.getLogger('wazuh')
+logger = logging.getLogger('wazuh-api')
 
 
 async def run_command(request, agents_list='*', pretty=False, wait_for_complete=False):
     """Runs an Active Response command on a specified agent
 
-    :param agents_list: List of Agents IDs. All possible values since 000 onwards
+    :param agents_list: List of Agents IDs. All possible values from 000 onwards
     :param pretty: Show results in human-readable format
     :param wait_for_complete: Disable timeout response
     :return: message

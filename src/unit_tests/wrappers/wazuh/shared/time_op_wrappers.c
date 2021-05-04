@@ -7,6 +7,9 @@
  * Foundation
  */
 
+#ifdef WIN32
+#include <windows.h>
+#endif
 #include "time_op_wrappers.h"
 #include <stddef.h>
 #include <stdarg.h>
@@ -22,3 +25,22 @@ void __wrap_w_sleep_until(const time_t new_time){
 void __wrap_w_time_delay(unsigned long int msec){
     current_time += (msec/1000);
 }
+
+char* __wrap_w_get_timestamp(time_t time) {
+    check_expected(time);
+
+    return mock_type(char*);
+}
+
+void __wrap_gettime(struct timespec *ts) {
+    ts->tv_sec = mock_type(time_t);
+}
+
+#ifdef WIN32
+long long __wrap_get_windows_file_time_epoch(FILETIME ftime) {
+    check_expected(ftime.dwLowDateTime);
+    check_expected(ftime.dwHighDateTime);
+
+    return mock_type(long long);
+}
+#endif

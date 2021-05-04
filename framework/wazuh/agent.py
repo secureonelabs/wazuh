@@ -9,8 +9,8 @@ from shutil import copyfile
 
 from wazuh.core import common, configuration
 from wazuh.core.InputValidator import InputValidator
-from wazuh.core.agent import WazuhDBQueryAgents, WazuhDBQueryGroupByAgents, \
-    WazuhDBQueryMultigroups, Agent, WazuhDBQueryGroup, get_agents_info, get_groups, get_rbac_filters
+from wazuh.core.agent import WazuhDBQueryAgents, WazuhDBQueryGroupByAgents, WazuhDBQueryMultigroups, Agent, \
+    WazuhDBQueryGroup, get_agents_info, get_groups, core_upgrade_agents, get_rbac_filters, agents_padding
 from wazuh.core.cluster.cluster import get_node
 from wazuh.core.cluster.utils import read_cluster_config
 from wazuh.core.exception import WazuhError, WazuhInternalError, WazuhException, WazuhResourceNotFound
@@ -44,7 +44,7 @@ def get_distinct_agents(agent_list=None, offset=0, limit=common.database_limit, 
                                       none_msg='No agent information was returned'
                                       )
 
-    if len(agent_list) != 0:
+    if agent_list:
         rbac_filters = get_rbac_filters(system_resources=get_agents_info(), permitted_resources=agent_list)
 
         db_query = WazuhDBQueryGroupByAgents(filter_fields=fields, offset=offset, limit=limit, sort=sort,
@@ -72,7 +72,7 @@ def get_agents_summary_status(agent_list=None):
     WazuhResult
     """
     summary = {'active': 0, 'disconnected': 0, 'never_connected': 0, 'pending': 0, 'total': 0}
-    if len(agent_list) != 0:
+    if agent_list:
         rbac_filters = get_rbac_filters(system_resources=get_agents_info(), permitted_resources=agent_list)
 
         # We don't consider agent 000 in order to get the summary
@@ -102,7 +102,7 @@ def get_agents_summary_os(agent_list=None):
     result = AffectedItemsWazuhResult(none_msg='Could not get the operative system of the agents',
                                       all_msg='Showing the operative system of all specified agents',
                                       some_msg='Could not get the operative system of some agents')
-    if len(agent_list) != 0:
+    if agent_list:
         rbac_filters = get_rbac_filters(system_resources=get_agents_info(), permitted_resources=agent_list)
 
         # We don't consider agent 000 in order to get the summary
@@ -119,7 +119,7 @@ def get_agents_summary_os(agent_list=None):
 @expose_resources(actions=["agent:restart"], resources=["agent:id:{agent_list}"],
                   post_proc_kwargs={'exclude_codes': [1701, 1703]})
 def restart_agents(agent_list=None):
-    """Restarts a list of agents..
+    """Restart a list of agents.
 
     :param agent_list: List of agents ID's.
     :return: AffectedItemsWazuhResult.
@@ -187,7 +187,7 @@ def get_agents(agent_list=None, offset=0, limit=common.database_limit, sort=None
                                       some_msg='Some agents information was not returned',
                                       none_msg='No agent information was returned'
                                       )
-    if len(agent_list) != 0:
+    if agent_list:
         if filters is None:
             filters = dict()
 
@@ -257,31 +257,40 @@ def get_agents_keys(agent_list=None):
 
 
 @expose_resources(actions=["agent:delete"], resources=["agent:id:{agent_list}"],
-                  post_proc_kwargs={'exclude_codes': [1701, 1703]})
-def delete_agents(agent_list=None, backup=False, purge=False, status="all", older_than="7d", use_only_authd=False):
-    """Deletes a list of agents.
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1731]})
+def delete_agents(agent_list=None, backup=False, purge=False, use_only_authd=False, filters=None, q=None):
+    """Delete a list of agents.
 
-    :param agent_list: List of agents ID's.
-    :param backup: Create backup before removing the agent.
-    :param purge: Delete definitely from key store.
-    :param older_than:  Filters out disconnected agents for longer than specified. Time in seconds | "[n_days]d" |
-    "[n_hours]h" | "[n_minutes]m" | "[n_seconds]s". For never_connected agents, uses the register date.
-    :param status: Filters by agent status: active, disconnected or never_connected. Multiples statuses separated
-    by commas.
-    :param use_only_authd: Force the use of authd when adding and removing agents.
-    :return: AffectedItemsWazuhResult.
+    Parameters
+    ----------
+    agent_list : list
+        List of agents ID's to be deleted.
+    backup : bool
+        Create backup before removing the agent.
+    purge : bool
+        Delete definitely from key store.
+    use_only_authd : bool
+        Force the use of authd when adding and removing agents.
+    filters : dict
+        Define required field filters. Format: {"field1":"value1", "field2":["value2","value3"]}
+    q : str
+        Define query to filter in DB.
+
+    Returns
+    -------
+    result : AffectedItemsWazuhResult
+        Result with affected agents.
     """
     result = AffectedItemsWazuhResult(all_msg='All selected agents were deleted',
                                       some_msg='Some agents were not deleted',
                                       none_msg='No agents were deleted'
                                       )
-    if len(agent_list) != 0:
+    if agent_list:
         system_agents = get_agents_info()
-        filters = {'older_than': older_than, 'status': status}
         rbac_filters = get_rbac_filters(system_resources=system_agents, permitted_resources=agent_list,
                                         filters=filters)
 
-        db_query = WazuhDBQueryAgents(limit=None, select=["id"], **rbac_filters)
+        db_query = WazuhDBQueryAgents(limit=None, select=["id"], query=q, **rbac_filters)
         data = db_query.run()
         can_purge_agents = list(map(operator.itemgetter('id'), data['items']))
         for agent_id in agent_list:
@@ -290,22 +299,23 @@ def delete_agents(agent_list=None, backup=False, purge=False, status="all", olde
                     raise WazuhError(1703)
                 elif agent_id not in system_agents:
                     raise WazuhResourceNotFound(1701)
+                elif agent_id not in can_purge_agents:
+                    raise WazuhError(
+                        1731,
+                        extra_message="some of the requirements are not met -> {}".format(
+                            ', '.join(f"{key}: {value}" for key, value in filters.items() if key != 'rbac_ids') +
+                            (f', q: {q}' if q else '')
+                        )
+                    )
                 else:
                     my_agent = Agent(agent_id)
                     my_agent.load_info_from_db()
-                    if agent_id not in can_purge_agents:
-                        raise WazuhError(
-                            1731,
-                            extra_message="The agent has a status different to '{0}' or the specified time "
-                                          "frame 'older_than {1}' does not apply".format(status, older_than)
-                        )
                     my_agent.remove(backup=backup, purge=purge, use_only_authd=use_only_authd)
                     result.affected_items.append(agent_id)
             except WazuhException as e:
                 result.add_failed_item(id_=agent_id, error=e)
         result.total_affected_items = len(result.affected_items)
         result.affected_items.sort(key=int)
-        result['older_than'] = older_than
 
     return result
 
@@ -349,32 +359,33 @@ def get_agent_groups(group_list=None, offset=0, limit=None, sort=None, search=No
                                       some_msg='Some groups information was not returned',
                                       none_msg='No group information was returned'
                                       )
+    if group_list:
 
-    # Add failed items
-    for invalid_group in set(group_list) - get_groups():
-        result.add_failed_item(id_=invalid_group, error=WazuhResourceNotFound(1710))
+        # Add failed items
+        for invalid_group in set(group_list) - get_groups():
+            result.add_failed_item(id_=invalid_group, error=WazuhResourceNotFound(1710))
 
-    rbac_filters = get_rbac_filters(system_resources=get_groups(), permitted_resources=group_list)
+        rbac_filters = get_rbac_filters(system_resources=get_groups(), permitted_resources=group_list)
 
-    group_query = WazuhDBQueryGroup(offset=offset, limit=limit, sort=sort, search=search, **rbac_filters)
-    query_data = group_query.run()
+        group_query = WazuhDBQueryGroup(offset=offset, limit=limit, sort=sort, search=search, **rbac_filters)
+        query_data = group_query.run()
 
-    for group in query_data['items']:
-        full_entry = path.join(common.shared_path, group['name'])
+        for group in query_data['items']:
+            full_entry = path.join(common.shared_path, group['name'])
 
-        # merged.mg and agent.conf sum
-        merged_sum = get_hash(path.join(full_entry, "merged.mg"), hash_algorithm)
-        conf_sum = get_hash(path.join(full_entry, "agent.conf"), hash_algorithm)
+            # merged.mg and agent.conf sum
+            merged_sum = get_hash(path.join(full_entry, "merged.mg"), hash_algorithm)
+            conf_sum = get_hash(path.join(full_entry, "agent.conf"), hash_algorithm)
 
-        if merged_sum:
-            group['mergedSum'] = merged_sum
+            if merged_sum:
+                group['mergedSum'] = merged_sum
 
-        if conf_sum:
-            group['configSum'] = conf_sum
-        affected_groups.append(group)
+            if conf_sum:
+                group['configSum'] = conf_sum
+            affected_groups.append(group)
 
-    result.affected_items = affected_groups
-    result.total_affected_items = query_data['totalItems']
+        result.affected_items = affected_groups
+        result.total_affected_items = query_data['totalItems']
 
     return result
 
@@ -673,7 +684,7 @@ def get_outdated_agents(agent_list=None, offset=0, limit=common.database_limit, 
                                       some_msg='Some agents information was not returned',
                                       none_msg='No agent information was returned'
                                       )
-    if len(agent_list) != 0:
+    if agent_list:
         # Get manager version
         manager = Agent(id='000')
         manager.load_info_from_db()
@@ -690,55 +701,107 @@ def get_outdated_agents(agent_list=None, offset=0, limit=common.database_limit, 
     return result
 
 
-@expose_resources(actions=["agent:upgrade"], resources=["agent:id:{agent_list}"], post_proc_func=None)
-def upgrade_agents(agent_list=None, wpk_repo=None, version=None, force=False, chunk_size=None, use_http=False):
+@expose_resources(actions=["agent:upgrade"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1703, 1818]})
+def upgrade_agents(agent_list=None, wpk_repo=None, version=None, force=False, use_http=False,
+                   file_path=None, installer=None):
+    """Start the agent upgrade process.
+
+    Parameters
+    ----------
+    agent_list : list
+        List of agents ID's.
+    wpk_repo : str
+        URL for WPK download.
+    version : str
+        Version to upgrade to.
+    force : bool
+        force the update even if it is a downgrade.
+    use_http : bool
+        False for HTTPS protocol, True for HTTP protocol.
+    file_path : str
+        Path to the installation file.
+    installer : str
+        Selected installer.
+
+    Returns
+    -------
+    ID of created tasks
+    """
+    result = AffectedItemsWazuhResult(all_msg='All upgrade tasks were created',
+                                      some_msg='Some upgrade tasks were not created',
+                                      none_msg='No upgrade task was created',
+                                      sort_fields=['agent'], sort_ascending='True')
+
+    agent_list = list(map(int, agents_padding(result=result, agent_list=agent_list)))
+    if version and not version.startswith('v'):
+        version = f'v{version}'
+
+    agents_result_chunks = [agent_list[x:x + 100] for x in range(0, len(agent_list), 100)]
+
+    agent_results = list()
+    for agents_chunk in agents_result_chunks:
+        agent_results.append(
+            core_upgrade_agents(command='upgrade' if not (installer or file_path) else 'upgrade_custom',
+                                agents_chunk=agents_chunk, wpk_repo=wpk_repo, version=version, force=force,
+                                use_http=use_http, file_path=file_path, installer=installer))
+
+    for agent_result_chunk in agent_results:
+        for agent_result in agent_result_chunk['data']:
+            if agent_result['error'] == 0:
+                task_agent = {
+                    'agent': str(agent_result['agent']).zfill(3),
+                    'task_id': agent_result['task_id']
+                }
+                result.affected_items.append(task_agent)
+                result.total_affected_items += 1
+            else:
+                error = WazuhError(code=1810 + agent_result['error'], cmd_error=True,
+                                   extra_message=agent_result['message'])
+                result.add_failed_item(id_=str(agent_result['agent']).zfill(3), error=error)
+    result.affected_items = sorted(result.affected_items, key=lambda k: k['agent'])
+
+    return result
+
+
+@expose_resources(actions=["agent:upgrade"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1703, 1817]})
+def get_upgrade_result(agent_list=None):
     """Read upgrade result output from agent.
 
-    :param agent_list: List of agents ID's.
-    :param wpk_repo: URL for WPK download.
-    :param version: Version to upgrade to.
-    :param force: force the update even if it is a downgrade.
-    :param chunk_size: size of each update chunk.
-    :param use_http: False for HTTPS protocol, True for HTTP protocol.
-    :return: Upgrade message.
+    Parameters
+    ----------
+    agent_list : list
+        List of agent ID's.
+
+    Returns
+    -------
+    Upgrade result.
     """
-    # We access unique agent_id from list, this may change if and when we decide to add option to upgrade a list of
-    # agents
-    agent_id = agent_list[0]
+    result = AffectedItemsWazuhResult(all_msg='All upgrade tasks were returned',
+                                      some_msg='Some upgrade tasks were not returned',
+                                      none_msg='No upgrade task was returned')
 
-    return Agent(agent_id).upgrade(wpk_repo=wpk_repo, version=version, force=True if int(force) == 1 else False,
-                                   chunk_size=chunk_size, use_http=use_http)
+    agent_list = list(map(int, agents_padding(result=result, agent_list=agent_list)))
+    agents_result_chunks = [agent_list[x:x + 100] for x in range(0, len(agent_list), 100)]
 
+    task_results = list()
+    for agents_chunk in agents_result_chunks:
+        task_results.append(core_upgrade_agents(agents_chunk=agents_chunk, get_result=True))
 
-@expose_resources(actions=["agent:upgrade"], resources=["agent:id:{agent_list}"], post_proc_func=None)
-def get_upgrade_result(agent_list=None, timeout=3):
-    """Read upgrade result output from agent.
+    for task_result_chunk in task_results:
+        for task_result in task_result_chunk['data']:
+            task_error = task_result.pop('error')
+            if task_error == 0:
+                task_result['agent'] = str(task_result['agent']).zfill(3)
+                result.affected_items.append(task_result)
+                result.total_affected_items += 1
+            else:
+                error = WazuhError(code=1810 + task_error, cmd_error=True, extra_message=task_result['message'])
+                result.add_failed_item(id_=str(task_result.pop('agent')).zfill(3), error=error)
+    result.affected_items = sorted(result.affected_items, key=lambda k: k['agent'])
 
-    :param agent_list: List of agents ID's.
-    :param timeout: Maximum time for the call to be considered failed.
-    :return: Upgrade result.
-    """
-    # We access unique agent_id from list, this may change if and when we decide to add option to upgrade a list of
-    # agents
-    agent_id = agent_list[0]
-
-    return Agent(agent_id).upgrade_result(timeout=int(timeout))
-
-
-@expose_resources(actions=["agent:upgrade"], resources=["agent:id:{agent_list}"], post_proc_func=None)
-def upgrade_agents_custom(agent_list=None, file_path=None, installer=None):
-    """Read upgrade result output from agent.
-
-    :param agent_list: List of agents ID's.
-    :param file_path: Path to the installation file.
-    :param installer: Selected installer.
-    :return: Upgrade message.
-    """
-    # We access unique agent_id from list, this may change if and when we decide to add option to upgrade a list of
-    # agents
-    agent_id = agent_list[0]
-
-    return Agent(agent_id).upgrade_custom(file_path=file_path, installer=installer)
+    return result
 
 
 @expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"], post_proc_func=None)
@@ -759,7 +822,7 @@ def get_agent_config(agent_list=None, component=None, config=None):
     if my_agent.status != "active":
         raise WazuhError(1740)
 
-    return WazuhResult({'data': my_agent.getconfig(component=component, config=config)})
+    return WazuhResult({'data': my_agent.getconfig(component=component, config=config, agent_version=my_agent.version)})
 
 
 @expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"],

@@ -64,6 +64,16 @@ void *__wrap_OSHash_Delete_ex(OSHash *self, const char *key) {
     return __real_OSHash_Delete_ex(self, key);
 }
 
+void *__real_OSHash_Delete(OSHash *self, const char *key);
+void *__wrap_OSHash_Delete(OSHash *self, const char *key) {
+    if (test_mode){
+        check_expected(self);
+        check_expected(key);
+        return mock_type(void*);
+    }
+    return __real_OSHash_Delete_ex(self, key);
+}
+
 void *__real_OSHash_Get(const OSHash *self, const char *key);
 void *__wrap_OSHash_Get(const OSHash *self, const char *key) {
     if (test_mode){
@@ -100,6 +110,12 @@ int __wrap_OSHash_setSize(__attribute__((unused)) OSHash *self,
 }
 
 int __wrap_OSHash_Update_ex(__attribute__((unused)) OSHash *self,
+                            __attribute__((unused)) const char *key,
+                            __attribute__((unused)) void *data) {
+    return mock();
+}
+
+int __wrap_OSHash_Update(__attribute__((unused)) OSHash *self,
                             __attribute__((unused)) const char *key,
                             __attribute__((unused)) void *data) {
     return mock();

@@ -21,7 +21,8 @@ const wm_context WM_OSCAP_CONTEXT = {
     "open-scap",
     (wm_routine)wm_oscap_main,
     (wm_routine)(void *)wm_oscap_destroy,
-    (cJSON * (*)(const void *))wm_oscap_dump
+    (cJSON * (*)(const void *))wm_oscap_dump,
+    NULL
 };
 
 #ifndef WIN32
@@ -97,7 +98,7 @@ void wm_oscap_setup(wm_oscap *_oscap) {
 
     // Connect to socket
 
-    queue_fd = StartMQ(DEFAULTQPATH, WRITE, INFINITE_OPENQ_ATTEMPTS);
+    queue_fd = StartMQ(DEFAULTQUEUE, WRITE, INFINITE_OPENQ_ATTEMPTS);
 
     if (queue_fd < 0) {
         mterror(WM_OSCAP_LOGTAG, "Can't connect to queue.");
@@ -129,7 +130,11 @@ void wm_oscap_run(wm_oscap_eval *eval) {
 
     // Create arguments
 
-    wm_strcat(&command, WM_OSCAP_SCRIPT_PATH, '\0');
+    char * script = NULL;
+    os_calloc(PATH_MAX, sizeof(char), script);
+    snprintf(script, PATH_MAX, "%s", WM_OSCAP_SCRIPT_PATH);
+    wm_strcat(&command, script, '\0');
+    os_free(script);
 
     switch (eval->type) {
     case WM_OSCAP_XCCDF:

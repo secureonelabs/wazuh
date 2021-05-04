@@ -27,6 +27,8 @@ OSHash *__wrap_OSHash_Create();
 
 void *__wrap_OSHash_Delete_ex(OSHash *self, const char *key);
 
+void *__wrap_OSHash_Delete(OSHash *self, const char *key);
+
 void *__wrap_OSHash_Get(const OSHash *self, const char *key);
 
 void *__real_OSHash_Get_ex(const OSHash *self, const char *key);
@@ -39,6 +41,8 @@ int __wrap_OSHash_SetFreeDataPointer(OSHash *self, void (free_data_function)(voi
 int __wrap_OSHash_setSize(OSHash *self, unsigned int new_size);
 
 int __wrap_OSHash_Update_ex(OSHash *self, const char *key, void *data);
+
+int __wrap_OSHash_Update(OSHash *self, const char *key, void *data);
 
 extern int OSHash_Add_ex_check_data;
 

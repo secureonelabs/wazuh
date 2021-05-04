@@ -12,20 +12,17 @@
 #define LOGREMOTE_H
 
 #ifndef ARGV0
-#define ARGV0 "ossec-remoted"
+#define ARGV0 "wazuh-remoted"
 #endif
 
 #include "config/config.h"
 #include "config/remote-config.h"
+#include "config/global-config.h"
 #include "sec.h"
 
 #define FD_LIST_INIT_VALUE 1024
-
-/* Queue management macros */
-
-#define full(i, j) ((i + 1) % MAX_AGENTS == j)
-#define empty(i, j) (i == j)
-#define forward(x) x = (x + 1) % MAX_AGENTS
+#define REMOTED_MSG_HEADER "1:" ARGV0 ":"
+#define AG_STOP_MSG REMOTED_MSG_HEADER OS_AG_STOPPED
 
 /* Pending data structure */
 
@@ -94,14 +91,14 @@ void *SCFGA_Forward(void *arg) __attribute__((noreturn));
 /* Initialize the manager */
 void manager_init();
 
+/* Free the manager */
+void manager_free();
+
 /* Wait for messages from the agent to analyze */
 void *wait_for_msgs(void *none);
 
 /* Update shared files */
 void *update_shared_files(void *none);
-
-/* Parse control messages */
-void parse_agent_controlmsg(const keyentry * key, char *msg, size_t msg_length);
 
 /* Save control messages */
 void save_controlmsg(const keyentry * key, char *msg, size_t msg_length, int *wdb_sock);
@@ -159,6 +156,7 @@ void rem_inc_dequeued();
 size_t rem_getconfig(const char * section, char ** output);
 cJSON *getRemoteConfig(void);
 cJSON *getRemoteInternalConfig(void);
+cJSON *getRemoteGlobalConfig(void);
 
 /* Network buffer */
 

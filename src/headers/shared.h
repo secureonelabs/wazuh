@@ -201,6 +201,10 @@ extern const char *__local_name;
 
 #define w_strlen(x) ({ size_t ret = 0; if (x) ret = strlen(x); ret;})
 
+// Calculate the number of elements within an array. 
+// Only static arrays allowed.
+#define array_size(array) (sizeof(array)/sizeof(array[0]))
+
 #ifdef CLIENT
 #define isAgent 1
 #else
@@ -226,10 +230,10 @@ extern const char *__local_name;
 #include "regex_op.h"
 #include "sig_op.h"
 #include "list_op.h"
-#include "dirtree_op.h"
 #include "hash_op.h"
 #include "rbtree_op.h"
 #include "queue_op.h"
+#include "queue_linked_op.h"
 #include "store_op.h"
 #include "rc.h"
 #include "ar.h"
@@ -267,6 +271,6 @@ extern const char *__local_name;
 #include "schedule_scan.h"
 #include "bzip2_op.h"
 #include "enrollment_op.h"
-
+#include "buffer_op.h"
 
 #endif /* SHARED_H */

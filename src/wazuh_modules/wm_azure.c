@@ -36,7 +36,8 @@ const wm_context WM_AZURE_CONTEXT = {
     AZ_WM_NAME,
     (wm_routine)wm_azure_main,
     (wm_routine)(void *)wm_azure_destroy,
-    (cJSON * (*)(const void *))wm_azure_dump
+    (cJSON * (*)(const void *))wm_azure_dump,
+    NULL
 };
 
 // Module main function. It won't return.
@@ -117,7 +118,11 @@ void wm_azure_log_analytics(wm_azure_api_t *log_analytics) {
         // Create argument list
         mtdebug2(WM_AZURE_LOGTAG, "Creating argument list.");
 
-        wm_strcat(&command, WM_AZURE_SCRIPT_PATH, '\0');
+        char * script = NULL;
+        os_calloc(PATH_MAX, sizeof(char), script);
+        snprintf(script, PATH_MAX, "%s", WM_AZURE_SCRIPT_PATH);
+        wm_strcat(&command, script, '\0');
+        os_free(script);
         wm_strcat(&command, "--log_analytics", ' ');
 
         if (log_analytics->auth_path) {
@@ -192,7 +197,11 @@ void wm_azure_graphs(wm_azure_api_t *graph) {
         // Create argument list
         mtdebug2(WM_AZURE_LOGTAG, "Creating argument list.");
 
-        wm_strcat(&command, WM_AZURE_SCRIPT_PATH, '\0');
+        char * script = NULL;
+        os_calloc(PATH_MAX, sizeof(char), script);
+        snprintf(script, PATH_MAX, "%s", WM_AZURE_SCRIPT_PATH);
+        wm_strcat(&command, script, '\0');
+        os_free(script);
         wm_strcat(&command, "--graph", ' ');
 
         if (graph->auth_path) {
@@ -265,7 +274,11 @@ void wm_azure_storage(wm_azure_storage_t *storage) {
         // Create argument list
         mtdebug2(WM_AZURE_LOGTAG, "Creating argument list.");
 
-        wm_strcat(&command, WM_AZURE_SCRIPT_PATH, '\0');
+        char * script = NULL;
+        os_calloc(PATH_MAX, sizeof(char), script);
+        snprintf(script, PATH_MAX, "%s", WM_AZURE_SCRIPT_PATH);
+        wm_strcat(&command, script, '\0');
+        os_free(script);
         wm_strcat(&command, "--storage", ' ');
 
         if (storage->auth_path) {
@@ -343,7 +356,7 @@ void wm_azure_setup(wm_azure_t *_azure_config) {
 
     // Connect to socket
 
-    queue_fd = StartMQ(DEFAULTQPATH, WRITE, INFINITE_OPENQ_ATTEMPTS);
+    queue_fd = StartMQ(DEFAULTQUEUE, WRITE, INFINITE_OPENQ_ATTEMPTS);
 
     if (queue_fd < 0) {
         mterror(WM_AZURE_LOGTAG, "Can't connect to queue.");

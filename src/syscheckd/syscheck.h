@@ -20,7 +20,13 @@
 /* Notify list size */
 #define NOTIFY_LIST_SIZE    32
 
+/* Audit defs */
 #define WDATA_DEFAULT_INTERVAL_SCAN 300
+#define AUDIT_SOCKET                "queue/sockets/audit"
+#define AUDIT_CONF_FILE             "etc/af_wazuh.conf"
+#define AUDIT_HEALTHCHECK_DIR       "tmp"
+#define AUDIT_HEALTHCHECK_KEY       "wazuh_hc"
+#define AUDIT_HEALTHCHECK_FILE      "tmp/audit_hc"
 
 #ifdef WIN32
 #define FIM_REGULAR _S_IFREG
@@ -46,6 +52,13 @@ typedef enum fim_scan_event {
     FIM_SCAN_END
 } fim_scan_event;
 
+typedef enum {
+    FIM_FILE_UPDATED,
+    FIM_FILE_DELETED,
+    FIM_FILE_ADDED_PATHS,
+    FIM_FILE_ERROR
+} fim_sanitize_state_t;
+
 typedef enum fim_state_db {
     FIM_STATE_DB_EMPTY,
     FIM_STATE_DB_NORMAL,
@@ -58,7 +71,7 @@ typedef struct fim_element {
     struct stat statbuf;
     int index;
     int configuration;
-    int mode;
+    fim_event_mode mode;
 } fim_element;
 
 typedef struct fim_tmp_file {
@@ -70,6 +83,19 @@ typedef struct fim_tmp_file {
     int elements;
 } fim_tmp_file;
 
+typedef struct diff_data {
+    int file_size;
+    int size_limit;
+
+    char *compress_folder;
+    char *compress_file;
+
+    char *tmp_folder;
+    char *file_origin;
+    char *uncompress_file;
+    char *compress_tmp_file;
+    char *diff_file;
+} diff_data;
 
 #ifdef WIN32
 /* Flags to know if a directory/file's watcher has been removed */
@@ -131,9 +157,15 @@ void read_internal(int debug_level);
 /**
  * @brief Performs an integrity monitoring scan
  *
+ * @return A timestamp taken as soons as the scan ends.
  */
-void fim_scan();
+time_t fim_scan();
 
+/**
+ * @brief Stop scanning files for one second if the max number of files scanned has been reached.
+ *
+ */
+void check_max_fps();
 
 /**
  * @brief
@@ -143,7 +175,7 @@ void fim_scan();
  * @param [in] w_evt Whodata event
  * @param [in] report 0 Dont report alert in the scan, otherwise an alert is generated
  */
-void fim_checker(char *path, fim_element *item, whodata_evt *w_evt, int report);
+void fim_checker(const char *path, fim_element *item, whodata_evt *w_evt, int report);
 
 /**
  * @brief Check file integrity monitoring on a specific folder
@@ -154,7 +186,7 @@ void fim_checker(char *path, fim_element *item, whodata_evt *w_evt, int report);
  * @param [in] report 0 Dont report alert in the scan, otherwise an alert is generated
  * @return 0 on success, -1 on failure
  */
-int fim_directory (char *dir, fim_element *item, whodata_evt *w_evt, int report);
+int fim_directory (const char *dir, fim_element *item, whodata_evt *w_evt, int report);
 
 /**
  * @brief Check file integrity monitoring on a specific file
@@ -163,9 +195,8 @@ int fim_directory (char *dir, fim_element *item, whodata_evt *w_evt, int report)
  * @param [in] item FIM item
  * @param [in] w_evt Whodata event
  * @param [in] report 0 Dont report alert in the scan, otherwise an alert is generated
- * @return 0 on success, -1 on failure
  */
-int fim_file(char *file, fim_element *item, whodata_evt *w_evt, int report);
+void fim_file(const char *file, fim_element *item, whodata_evt *w_evt, int report);
 
 /**
  * @brief Process FIM realtime event
@@ -192,23 +223,12 @@ void fim_whodata_event(whodata_evt *w_evt);
 void fim_process_missing_entry(char * pathname, fim_event_mode mode, whodata_evt * w_evt);
 
 /**
- * @brief Check file integrity monitoring on a specific registry
- *
- * @param key Path of the registry to check
- * @param data Data to insert in the FIM databse
- * @param pos Position of the specific registry in the registry configuration array
- * @return -1 on error, 0 if the registry hasn't changed, 1 if the registry is new, 2 if the registry has changed
- */
-int fim_registry_event(char *key, fim_entry_data *data, int pos);
-
-/**
  * @brief Search the position of the path in directories array
  *
  * @param path Path to seek in the directories array
- * @param entry "file", for file checking or "registry" for registry checking
  * @return Returns the position of the path in the directories array, -1 if the path is not found
  */
-int fim_configuration_directory(const char *path, const char *entry);
+int fim_configuration_directory(const char *path);
 
 /**
  * @brief Evaluates the depth of the directory or file to check if it exceeds the configured max_depth value
@@ -217,7 +237,7 @@ int fim_configuration_directory(const char *path, const char *entry);
  * @param dir_position Position of the file to check in the directories array
  * @return Depth of the directory/file, -1 on error
  */
-int fim_check_depth(char *path, int dir_position);
+int fim_check_depth(const char *path, int dir_position);
 
 /**
  * @brief Get data from file
@@ -225,23 +245,23 @@ int fim_check_depth(char *path, int dir_position);
  * @param file_name Name of the file to get the data from
  * @param item FIM item asociated with the file
  *
- * @return A fim_entry_data structure with the data from the file
+ * @return A fim_file_data structure with the data from the file
  */
-fim_entry_data * fim_get_data(const char *file_name, fim_element *item);
+fim_file_data * fim_get_data(const char *file_name, const fim_element *item);
 
 /**
- * @brief Initialize a fim_entry_data structure
+ * @brief Initialize a fim_file_data structure
  *
  * @param [out] data Data to initialize
  */
-void init_fim_data_entry(fim_entry_data *data);
+void init_fim_data_entry(fim_file_data *data);
 
 /**
  * @brief Calculate checksum of a FIM entry data
  *
  * @param data FIM entry data to calculate the checksum with
  */
-void fim_get_checksum(fim_entry_data *data);
+void fim_get_checksum(fim_file_data *data);
 
 /**
  * @brief Prints the scan information
@@ -257,7 +277,6 @@ void fim_rt_delay();
 
 /**
  * @brief Checks for deleted files, deletes them from the agent's database and sends a deletion event on scheduled scans
- *
  */
 void check_deleted_files();
 
@@ -292,14 +311,21 @@ void check_deleted_files();
  * @return File event JSON object.
  * @retval NULL No changes detected. Do not send an event.
  */
-cJSON *fim_json_event(char *file_name, fim_entry_data *old_data, fim_entry_data *new_data, int pos, unsigned int type, fim_event_mode mode, whodata_evt *w_evt, const char *diff);
+cJSON *fim_json_event(const char *file_name,
+                      fim_file_data *old_data,
+                      fim_file_data *new_data,
+                      int pos,
+                      unsigned int type,
+                      fim_event_mode mode,
+                      const whodata_evt *w_evt,
+                      const char *diff);
 
 /**
  * @brief Frees the memory of a FIM entry data structure
  *
  * @param [out] data The FIM entry data to be freed
  */
-void free_entry_data(fim_entry_data *data);
+void free_file_data(fim_file_data *data);
 
 /**
  * @brief Deallocates fim_entry struct.
@@ -307,19 +333,6 @@ void free_entry_data(fim_entry_data *data);
  * @param entry Entry to be deallocated.
  */
 void free_entry(fim_entry * entry);
-
-/**
- * @brief Frees the memory of a FIM inode data structure
- *
- * @param [out] data The FIM inode data to be freed
- */
-void free_inode_data(fim_inode_data **data);
-
-/**
- * @brief Check the registries in the configuration for changes
- *
- */
-void os_winreg_check(void);
 
 /**
  * @brief Start real time monitoring
@@ -365,57 +378,6 @@ void delete_subdirectories_watches(char *dir);
 void realtime_sanitize_watch_map();
 
 /**
- * @brief Check if a file has changed
- *
- * @param filename The name of the file to be checked
- * @return The diff alert generated, NULL on error
- */
-char *seechanges_addfile(const char *filename) __attribute__((nonnull));
-
-/**
- * @brief Delete stored compressed file for "path"
- *
- * @param path Path to the file which compressed version needs to be deleted
- */
-void seechanges_delete_compressed_file(const char *path);
-
-/**
- * @brief Get queue/diff/local path from file path
- *
- * @param path Path to the file
- * @return Path to the queue/diff/local folder
- */
-char *seechanges_get_diff_path(char *path);
-
-/**
- * @brief Estimate whether the compressed file will fit in the disk_quota limit
- *
- * @param file_size Uncompressed file size
- * @return true for files which compressed version could fit, false otherwise
- */
-int seechanges_estimate_compression(const float file_size);
-
-/**
- * @brief Changed the value of syscheck.comp_estimation_perc based on the actual compression rate
- *
- * @param compressed_size Size of the compressed file
- * @param uncompressed_size Size of the file before the compression
- */
-void seechanges_modify_estimation_percentage(const float compressed_size, const float uncompressed_size);
-
-#ifndef WIN32
-
-/**
- * @brief Check if the filename is symlink to a directory
- *
- * @param filename Path to file
- * @return TRUE if filename is a symlink to a directory, FALSE otherwise
- */
-int symlink_to_dir(const char *filename);
-
-#endif
-
-/**
  * @brief Frees the memory of a Whodata event structure
  *
  * @param [out] w_evt
@@ -427,14 +389,15 @@ void free_whodata_event(whodata_evt *w_evt);
  *
  * @param msg The message to be sent
  */
-void send_syscheck_msg(const char *msg) __attribute__((nonnull));
+void send_syscheck_msg(const cJSON *msg) __attribute__((nonnull));
 
 /**
  * @brief Send a data synchronization control message
  *
+ * @param location Specifies if the synchronization message is for files or registries.
  * @param msg The message to be sent
  */
-void fim_send_sync_msg(const char *msg);
+void fim_send_sync_msg(const char *location, const char * msg);
 
 // TODO
 /**
@@ -472,12 +435,18 @@ char *audit_get_id(const char * event);
 int init_regex(void);
 
 /**
- * @brief Adds audit rules to configured directories
+ * @brief Adds audit rules to directories
  *
- * @param first_time Indicates if it's the first time the rules are being added
- * @return The number of rules added
+ * @param path Path of the configured rule
  */
-int add_audit_rules_syscheck(bool first_time);
+void add_whodata_directory(const char *path);
+
+/**
+ * @brief Function the delete the audit rule for a specfic path
+ *
+ * @param path: Path of the configured rule.
+ */
+void remove_audit_rule_syscheck(const char *path);
 
 /**
  * @brief Read an audit event from socket
@@ -494,11 +463,17 @@ void audit_read_events(int *audit_sock, int reading_mode);
 void audit_set_db_consistency(void);
 
 /**
- * @brief Check if Auditd is installed and running
+ * @brief Check if the Audit daemon is installed and running
  *
  * @return The PID of Auditd
  */
 int check_auditd_enabled(void);
+
+/**
+ * @brief Set all directories that don't have audit rules and have whodata enabled to realtime.
+ *
+*/
+void audit_no_rules_to_realtime();
 
 /**
  * @brief Set Auditd socket configuration
@@ -513,13 +488,6 @@ int set_auditd_config(void);
  * @return File descriptor of the socket, -1 on error
  */
 int init_auditd_socket(void);
-
-/**
- * @brief Creates the necessary threads to process audit events
- *
- * @param [out] audit_sock The audit socket to read the events from
- */
-void *audit_main(int *audit_sock);
 
 /**
  * @brief Reloads audit rules every RELOAD_RULES_INTERVAL seconds
@@ -560,7 +528,7 @@ void get_parent_process_info(char *ppid, char ** const parent_name, char ** cons
  * This is necessary to include audit rules for hot added directories in the configuration
  *
  */
-void audit_reload_rules(void);
+void fim_audit_reload_rules(void);
 
 /**
  * @brief Parses an audit event and sends the corresponding alert message
@@ -589,15 +557,8 @@ void clean_rules(void);
  * @param buffer
  * @return 0 if no key is found, 1 if AUDIT_KEY is found, 2 if an existing key is found, 3 if AUDIT_HEALTHCHECK_KEY is found
  */
+
 int filterkey_audit_events(char *buffer);
-extern W_Vector *audit_added_dirs;
-extern volatile int audit_thread_active;
-extern volatile int whodata_alerts;
-extern volatile int audit_db_consistency_flag;
-extern pthread_mutex_t audit_mutex;
-extern pthread_cond_t audit_thread_started;
-extern pthread_cond_t audit_hc_started;
-extern pthread_cond_t audit_db_consistency;
 
 #elif WIN32
 /**
@@ -635,15 +596,61 @@ void audit_restore();
  */
 
 long unsigned int WINAPI state_checker(__attribute__((unused)) void *_void);
+
+/**
+ * @brief Function that generates the diff file of a Windows registry when the option report_changes is activated
+ * It creates a file with the content of the value, to compute differences
+ *
+ * @param key_name Path of the registry key monitored
+ * @param value_name Name of the value that has generated the alert
+ * @param value_data Content of the value to be checked
+ * @param data_type The type of value we are checking
+ * @param registry Config of the registry key
+ * @return String with the changes to add to the alert
+ */
+
+char *fim_registry_value_diff(const char *key_name,
+                              const char *value_name,
+                              const char *value_data,
+                              DWORD data_type,
+                              const registry *configuration);
 #endif
 
 /**
- * @brief Checks if a specific file has been configured with the ``nodiff`` option
+ * @brief Function that generates the diff file of a file monitored when the option report_changes is activated
  *
- * @param filename The name of the file to check
- * @return 1 if the file has been configured with the ``nodiff`` option, 0 if not
+ * @param filename Path of file monitored
+ * @return String with the diff to add to the alert
  */
-int is_nodiff(const char *filename);
+
+char * fim_file_diff(const char *filename);
+
+/**
+ * @brief Deletes the filename diff folder and modify diff_folder_size if disk_quota enabled
+ *
+ * @param filename Path of the file that has been deleted
+ * @return 0 if success, -1 on error
+ */
+int fim_diff_process_delete_file(const char *filename);
+
+/**
+ * @brief Deletes the registry diff folder and modify diff_folder_size if disk_quota enabled
+ *
+ * @param key_name Path of the registry that has been deleted
+ * @param arch Arch type of the registry
+ * @return 0 if success, -1 on error
+ */
+int fim_diff_process_delete_registry(const char *key_name, int arch);
+
+/**
+ * @brief Deletes the value diff folder and modifies diff_folder_size if disk_quota enabled
+ *
+ * @param key_name Path of the registry that contains the deleted value
+ * @param value_name Path of the value that has been deleted
+ * @param arch Arch type of the registry
+ * @return 0 if success, -1 on error
+ */
+int fim_diff_process_delete_value(const char *key_name, const char *value_name, int arch);
 
 /**
  * @brief Initializes all syscheck data
@@ -726,8 +733,10 @@ void *fim_run_integrity(void *args);
 /**
  * @brief Calculates the checksum of the FIM entry files and sends it to the database for integrity checking
  *
+ * @param type Must be FIM_TYPE_FILE or FIM_TYPE_REGISTRY.
+ * @param mutex A mutex associated with the DB tables to be synchronized.
  */
-void fim_sync_checksum();
+void fim_sync_checksum(fim_type type, pthread_mutex_t *mutex);
 
 /**
  * @brief Calculates the checksum of the FIM entry files starting from `start` letter and finishing at `top` letter
@@ -786,7 +795,7 @@ void fim_sync_push_msg(const char *msg);
  * @pre data is mutex-blocked.
  * @return Pointer to cJSON structure.
  */
-cJSON * fim_attributes_json(const fim_entry_data * data);
+cJSON * fim_attributes_json(const fim_file_data * data);
 
 /**
  * @brief Create file entry JSON from a FIM entry structure
@@ -814,12 +823,12 @@ cJSON * fim_attributes_json(const fim_entry_data * data);
  *   }
  * }
  *
- * @param path Pointer to file path string.
- * @param data Pointer to a FIM entry structure.
- * @pre data is mutex-blocked.
+ * @param key Pointer to the key used in the manager fim_entry DB.
+ * @param entry Pointer to a FIM entry structure.
+ * @pre entry is mutex-blocked.
  * @return Pointer to cJSON structure.
  */
-cJSON * fim_entry_json(const char * path, fim_entry_data * data);
+cJSON *fim_entry_json(const char *key, fim_entry *entry);
 
 /**
  * @brief Create file attribute comparison JSON object
@@ -841,7 +850,7 @@ cJSON * fim_entry_json(const char * path, fim_entry_data * data);
  * @param new_data
  * @return cJSON*
  */
-cJSON * fim_json_compare_attrs(const fim_entry_data * old_data, const fim_entry_data * new_data);
+cJSON * fim_json_compare_attrs(const fim_file_data * old_data, const fim_file_data * new_data);
 
 /**
  * @brief Create file audit data JSON object
@@ -904,12 +913,27 @@ void fim_check_db_state();
 void fim_diff_folder_size();
 
 /**
- * @brief Get path from syscheck.dir or syscheck.symbolic_links, depending on whether there is a resolved path
- * configured in syscheck.symbolic_links or not.
+ * @brief Get the directory that will be effectively monitored depending on configuration the entry configuration and
+ * physical object in the filesystem
  *
  * @param position Position of the directory in the structure
- * @return syscheck.symbolic_links[position] if not NULL, syscheck.dir[position] otherwise
+ * @return A string holding the element being monitored. It must be freed after it's usage.
  */
 char *fim_get_real_path(int position);
 
+/**
+ * @brief Create a delete event and removes the entry from the database.
+ *
+ * @param fim_sql FIM database struct.
+ * @param entry Entry data to be removed.
+ * @param mutex FIM database's mutex for thread synchronization.
+ * @param alert False don't send alert, True send delete alert.
+ * @param fim_ev_mode FIM Mode (scheduled/realtime/whodata)
+ * @param w_evt Whodata information.
+ *
+ */
+void fim_delete_file_event(fdb_t *fim_sql, fim_entry *entry, pthread_mutex_t *mutex,
+                           __attribute__((unused))void *alert,
+                           __attribute__((unused))void *fim_ev_mode,
+                           __attribute__((unused))void *w_evt);
 #endif /* SYSCHECK_H */

@@ -10,6 +10,8 @@
 
 #include "wazuhdb_op.h"
 
+#ifndef WIN32
+
 /**
  * @brief Connects to Wazuh-DB socket
  *
@@ -21,11 +23,8 @@ int wdbc_connect() {
     int wdb_socket = -1;
     char sockname[PATH_MAX + 1];
 
-    if (isChroot()) {
-        strcpy(sockname, WDB_LOCAL_SOCK);
-    } else {
-        strcpy(sockname, DEFAULTDIR WDB_LOCAL_SOCK);
-    }
+    strcpy(sockname, WDB_LOCAL_SOCK);
+
 
     for (attempts = 1; attempts <= 3 && (wdb_socket = OS_ConnectUnixDomain(sockname, SOCK_STREAM, OS_SIZE_6144)) < 0; attempts++) {
         switch (errno) {
@@ -192,10 +191,9 @@ int wdbc_parse_result(char *result, char **payload) {
     return retval;
 }
 
-
 /**
  * @brief Combine wdbc_query_ex and wdbc_parse_result functions and return a JSON item.
- * 
+ *
  * @param[in] sock Pointer to the client socket descriptor.
  * @param[in] query Query to be sent to Wazuh-DB.
  * @param[out] response Char pointer where the response from Wazuh-DB will be stored.
@@ -231,6 +229,42 @@ cJSON * wdbc_query_parse_json(int *sock, const char *query, char *response, cons
     return root;
 }
 
+/**
+ * @brief Combine wdbc_query_ex and wdbc_parse_result functions.
+ *
+ * @param[in] sock Pointer to the client socket descriptor.
+ * @param[in] query Query to be sent to Wazuh-DB.
+ * @param[out] response Char pointer where the response from Wazuh-DB will be stored.
+ * @param[in] len Lenght of the response param.
+ * @param[out] payload Char pointer where the payload from Wazuh-DB will be stored.
+ * @return Enum wdbc_result.
+ */
+
+wdbc_result wdbc_query_parse(int *sock, const char *query, char *response, const int len, char** payload) {
+    wdbc_result status = WDBC_ERROR;
+    char* _payload = NULL;
+
+    int result = wdbc_query_ex(sock, query, response, len);
+    if (OS_SUCCESS == result) {
+        status = wdbc_parse_result(response, &_payload);
+        if (status == WDBC_ERROR){
+            merror("Bad response from wazuh-db: %s", _payload);
+        }
+    }
+    else if (-2 == result) {
+        merror("Unable to connect to socket '%s'", WDB_LOCAL_SOCK);
+    }
+    else if (-1 == result) {
+        merror("No response from wazuh-db.");
+    }
+
+    if (payload) {
+        *payload = _payload;
+    }
+
+    return status;
+}
+
 int wdbc_close(int* sock) {
     int ret = 0;
     if (*sock >= 0) {
@@ -239,3 +273,4 @@ int wdbc_close(int* sock) {
     }
     return ret;
 }
+#endif

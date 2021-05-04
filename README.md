@@ -77,31 +77,31 @@ The Wazuh WUI provides a powerful user interface for data visualization and anal
 
 **Security events**
 
-![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/img/app2.png)
+![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/assets/app2.png)
 
 **Integrity monitoring**
 
-![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/img/app3.png)
+![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/assets/app3.png)
 
 **Vulnerability detection**
 
-![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/img/app4.png)
+![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/assets/app4.png)
 
 **Regulatory compliance**
 
-![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/img/app5.png)
+![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/assets/app5.png)
 
 **Agents overview**
 
-![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/img/app6.png)
+![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/assets/app6.png)
 
 **Agent summary**
 
-![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/img/app7.png)
+![Overview](https://github.com/wazuh/wazuh-kibana-app/blob/master/public/assets/app7.png)
 
 ## Orchestration
 
-Here you can find all the automation tools manteined by the Wazuh team.
+Here you can find all the automation tools maintained by the Wazuh team.
 
 * [Wazuh AWS CloudFormation](https://github.com/wazuh/wazuh-cloudformation)
 
@@ -139,6 +139,7 @@ Here you can find all the automation tools manteined by the Wazuh team.
 * A embedded part of the Berkeley DB library (https://github.com/berkeleydb/libdb).
 * CPython interpreter by Guido van Rossum and the Python Software Foundation (https://www.python.org).
 * PyPi packages: [azure-storage-blob](https://github.com/Azure/azure-storage-python), [boto3](https://github.com/boto/boto3), [cryptography](https://github.com/pyca/cryptography), [docker](https://github.com/docker/docker-py), [pytz](https://pythonhosted.org/pytz/), [requests](http://python-requests.org/) and [uvloop](http://github.com/MagicStack/uvloop).
+* PCRE2 library by Philip Hazel (https://www.pcre.org/).
 
 ## Documentation
 

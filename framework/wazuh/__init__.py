@@ -4,13 +4,11 @@
 # Created by Wazuh, Inc. <info@wazuh.com>.
 # This program is free software; you can redistribute it and/or modify it under the terms of GPLv2
 
-import os
-import re
 from datetime import datetime
 from time import strftime
 
 from wazuh.core import common
-from wazuh.core.database import Connection
+from wazuh.core.wdb import WazuhDBConnection
 from wazuh.core.exception import WazuhException, WazuhError, WazuhInternalError
 
 """
@@ -20,7 +18,7 @@ Wazuh is a python package to manage OSSEC.
 
 """
 
-__version__ = '4.0.4'
+__version__ = '4.2.0'
 
 
 msg = "\n\nPython 2.7 or newer not found."
@@ -50,10 +48,9 @@ class Wazuh:
         self.version = common.wazuh_version
         self.installation_date = common.installation_date
         self.type = common.install_type
-        self.path = common.ossec_path
-        self.max_agents = 'N/A'
+        self.path = common.wazuh_path
+        self.max_agents = 'unlimited'
         self.openssl_support = 'N/A'
-        self.ruleset_version = None
         self.tz_offset = None
         self.tz_name = None
 
@@ -79,7 +76,6 @@ class Wazuh:
                 'type': self.type,
                 'max_agents': self.max_agents,
                 'openssl_support': self.openssl_support,
-                'ruleset_version': self.ruleset_version,
                 'tz_offset': self.tz_offset,
                 'tz_name': self.tz_name
                 }
@@ -90,29 +86,11 @@ class Wazuh:
         """
         # info DB if possible
         try:
-            conn = Connection(common.database_path_global)
-
-            query = "SELECT * FROM info"
-            conn.execute(query)
-
-            for tuple_ in conn:
-                if hasattr(self, tuple_['key']):
-                    setattr(self, tuple_['key'], tuple_['value'])
+            wdb_conn = WazuhDBConnection()
+            open_ssl = wdb_conn.execute("global sql SELECT value FROM info WHERE key = 'openssl_support'")[0]['value']
+            self.openssl_support = open_ssl
         except Exception:
-            self.max_agents = "N/A"
             self.openssl_support = "N/A"
-
-        # Ruleset version
-        ruleset_version_file = os.path.join(self.path, 'ruleset', 'VERSION')
-        try:
-            with open(ruleset_version_file, 'r') as f:
-                line_regex = re.compile(r'(^\w+)="(.+)"')
-                for line in f:
-                    match = line_regex.match(line)
-                    if match and len(match.groups()) == 2:
-                        self.ruleset_version = match.group(2)
-        except:
-            raise WazuhInternalError(1005, extra_message=ruleset_version_file)
 
         # Timezone info
         try:

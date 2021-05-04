@@ -177,6 +177,7 @@
       "data.os.hostname",
       "data.os.major",
       "data.os.minor",
+      "data.os.patch",
       "data.os.name",
       "data.os.platform",
       "data.os.release",
@@ -438,6 +439,10 @@
       "syscheck.uid_before",
       "syscheck.uname_after",
       "syscheck.uname_before",
+      "syscheck.arch",
+      "syscheck.value_name",
+      "syscheck.value_type",
+      "syscheck.changed_attributes",
       "title",
       "type"
     ]
@@ -1194,6 +1199,9 @@
                 "type": "keyword"
               },
               "minor": {
+                "type": "keyword"
+              },
+              "patch": {
                 "type": "keyword"
               },
               "build": {

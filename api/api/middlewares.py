@@ -3,7 +3,7 @@
 # This program is a free software; you can redistribute it and/or modify it under the terms of GPLv2
 
 import concurrent.futures
-
+from json import JSONDecodeError
 from logging import getLogger
 from time import time
 
@@ -20,7 +20,7 @@ from wazuh.core.exception import WazuhTooManyRequests, WazuhPermissionError
 # API secure headers
 secure_headers = SecureHeaders(server="Wazuh", csp="none", xfo="DENY")
 
-logger = getLogger('wazuh')
+logger = getLogger('wazuh-api')
 pool = concurrent.futures.ThreadPoolExecutor()
 
 
@@ -75,6 +75,19 @@ async def prevent_bruteforce_attack(request, attempts=5):
 
 
 @web.middleware
+async def request_logging(request, handler):
+    """Add request info to logging."""
+    logger.debug2(f'Receiving headers {dict(request.headers)}')
+    try:
+        body = await request.json()
+        request['body'] = body
+    except JSONDecodeError:
+        pass
+
+    return await handler(request)
+
+
+@web.middleware
 async def prevent_denial_of_service(request, max_requests=300):
     """This function checks that the maximum number of requests per minute set in the configuration is not exceeded"""
     global current_time, request_counter
@@ -95,7 +108,8 @@ async def prevent_denial_of_service(request, max_requests=300):
 @web.middleware
 async def security_middleware(request, handler):
     access_conf = api_conf['access']
-    await prevent_denial_of_service(request, max_requests=access_conf['max_request_per_minute'])
+    if access_conf['max_request_per_minute'] > 0:
+        await prevent_denial_of_service(request, max_requests=access_conf['max_request_per_minute'])
     await unlock_ip(request=request, block_time=access_conf['block_time'])
 
     return await handler(request)

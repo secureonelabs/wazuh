@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from base64 import b64decode
 from json import loads
@@ -23,7 +24,14 @@ def test_token_raw_format(response):
 
 
 def test_select_key_affected_items(response, select_key):
-    """
+    """Check that all items in response have no other keys than those specified in 'select_key'.
+
+    Absence of 'select_key' in response does not raise any error. However, extra keys in response (not specified
+    in 'select_key') will raise assertion error.
+
+    Some keys like 'id', 'agent_id', etc. are accepted even if not specified in 'select_key' since
+    they ignore the 'select' param in API.
+
     :param response: Request response
     :param select_key: Keys requested in select parameter.
         Lists and nested fields accepted e.g: id,cpu.mhz,json
@@ -44,13 +52,17 @@ def test_select_key_affected_items(response, select_key):
             main_keys.update({key})
 
     for item in response.json()['data']['affected_items']:
+        # Get keys in response that are not specified in 'select_keys'
         set1 = main_keys.symmetric_difference(set(item.keys()))
-        assert set1 == set() or set1.intersection({'id', 'agent_id'}), \
-            f'Select keys are {main_keys}, but this one is different {set1}'
+        # Check if there are keys in response that were not specified in 'select_keys', apart from those which can be
+        # mandatory (id, agent_id, etc).
+        assert (set1 == set() or set1 == set1.intersection({'id', 'agent_id', 'file'} | main_keys)), \
+            f'Select keys are {main_keys}, but the response contains these keys: {set1}'
 
         for nested_key in nested_keys.items():
             set2 = nested_key[1].symmetric_difference(set(item[nested_key[0]].keys()))
-            assert set2 == set(), f'Nested select keys are {nested_key[1]}, but this one is different {set2}'
+            assert set2 == set(), f'Nested select keys are {nested_key[1]}, but the response contains these nested ' \
+                                  f'keys {set2}'
 
 
 def test_select_key_affected_items_with_agent_id(response, select_key):
@@ -70,17 +82,25 @@ def test_select_key_affected_items_with_agent_id(response, select_key):
         assert set(response.json()["data"]["affected_items"][0].keys()) == expected_keys
 
 
-def test_sort_response(response, affected_items):
+def test_sort_response(response, key=None, reverse=True):
+    """Check that the response's affected items are sorted by the specified key.
+
+    Parameters
+    ----------
+    response : Request response
+    key : str
+        Key expected to sort by.
+    reverse : bool
+        Indicate if the expected order is ascending (False) or descending (True). Default: True
+
+    Returns
+    -------
+    bool
+        True if the response's items are sorted by the key.
     """
-    :param response: Request response
-    :param affected_items: List of agent
-    :return: True if request response have this items
-    """
-    affected_items = affected_items.replace("'", '"')
-    affected_items = json.loads(affected_items)
-    reverse_index = len(affected_items) - 1
-    for index, item_response in enumerate(response.json()['data']['affected_items']):
-        assert item_response == affected_items[reverse_index - index]
+    affected_items = response.json()['data']['affected_items']
+    # If affected_items is a list of strings instead of dictionaries, key will be None
+    assert affected_items == sorted(affected_items, key=(lambda item: item[key]) if key else None, reverse=reverse)
 
 
 def test_validate_data_dict_field(response, fields_dict):
@@ -96,30 +116,6 @@ def test_validate_data_dict_field(response, fields_dict):
                 assert isinstance(element['count'], int)
 
 
-def test_validate_upgrade(response):
-    # We accept the test as passed if it either upgrades correctly or the version is not available
-    assert response.json().get('message', None) == "Upgrade procedure started" \
-           or response.json().get('error', None) == 1718
-    if response.json().get('message', None) == "Upgrade procedure started":
-        time.sleep(45)
-        return Box({"upgraded": 1})
-    else:
-        return Box({"upgraded": 0})
-
-
-def test_validate_upgrade_result(response, upgraded):
-    upgraded = int(upgraded, 10)
-    if upgraded == 1:
-        assert response.json().get('message', None) == "Agent was successfully upgraded"
-    else:
-        # If upgrade didnt work because no version was available, we expect an empty upgrade_result with error 1716
-        assert response.json().get('error', None) == 1716
-
-
-def test_validate_update_latest_version(response):
-    assert response.json().get('error', None) == 1749 or response.json().get('error', None) == 1718
-
-
 def test_count_elements(response, n_expected_items):
     """
     :param response: Request response
@@ -129,10 +125,16 @@ def test_count_elements(response, n_expected_items):
 
 
 def test_expected_value(response, key, expected_values):
-    """
-    :param response: Request response
-    :param key: Key whose value to compare.
-    :param expected_values: Values to be found inside response.
+    """Iterate all items in the response and check that <key> value is within <expected_values>.
+
+    Parameters
+    ----------
+    response : Request response
+        API response to request.
+    key : str
+        Key whose value is checked.
+    expected_values : str, list
+        List of values which are allowed.
     """
     expected_values = set(expected_values.split(',')) if not isinstance(expected_values, list) else set(expected_values)
 
@@ -205,3 +207,19 @@ def test_validate_syscollector_hotfix(response, hotfix_filter=None, experimental
             assert set(item.keys()) == hotfixes_keys
             if hotfix_filter:
                 assert item['hotfix'] == hotfix_filter
+
+
+def test_validate_group_configuration(response, expected_field, expected_value):
+    response_json = response.json()
+    assert len(response_json['data']['affected_items']) > 0 and \
+           'config' in response_json['data']['affected_items'][0] and \
+           'localfile' in response_json['data']['affected_items'][0]['config'], \
+        'No config or localfile fields were found in the affected_items. Response: {}'.format(response_json)
+
+    response_config = response_json['data']['affected_items'][0]['config']['localfile'][0]
+    assert expected_field in set(response_config.keys()), \
+        'The expected config key is not present in the received response.'
+
+    assert response_config[expected_field] == expected_value, \
+        'The received value for query does not match with the expected one. ' \
+        'Received: {}. Expected: {}'.format(response_config[expected_field], expected_value)

@@ -33,6 +33,7 @@
 #define CBUFFER       002000000
 #define CCLUSTER      004000000
 #define CSOCKET       010000000
+#define CLOGTEST      020000000
 
 #define MAX_NEEDED_TAGS 4
 
@@ -50,7 +51,6 @@ int ReadConfig(int modules, const char *cfgfile, void *d1, void *d2);
 
 int Read_Global(XML_NODE node, void *d1, void *d2);
 int Read_GlobalSK(XML_NODE node, void *configp, void *mailp);
-int Read_Rules(XML_NODE node, void *d1, void *d2);
 int Read_Syscheck(const OS_XML *xml, XML_NODE node, void *d1, void *d2, int modules);
 int Read_Rootcheck(XML_NODE node, void *d1, void *d2);
 int Read_Alerts(XML_NODE node, void *d1, void *d2);
@@ -70,13 +70,22 @@ int Read_WModule(const OS_XML *xml, xml_node *node, void *d1, void *d2);
 int Read_SCA(const OS_XML *xml, xml_node *node, void *d1);
 int Read_GCP(const OS_XML *xml, xml_node *node, void *d1);
 #ifndef WIN32
+int Read_Rules(XML_NODE node, void *d1, void *d2);
 int Read_Fluent_Forwarder(const OS_XML *xml, xml_node *node, void *d1);
+int Read_Authd(XML_NODE node, void *d1, void *d2);
 #endif
 int Read_Labels(XML_NODE node, void *d1, void *d2);
-int Read_Authd(XML_NODE node, void *d1, void *d2);
 int Read_Cluster(XML_NODE node, void *d1, void *d2);
 int Read_Socket(XML_NODE node, void *d1, void *d2);
 int Read_Vuln(const OS_XML *xml, xml_node **nodes, void *d1, char d2);
+int Read_AgentUpgrade(const OS_XML *xml, xml_node *node, void *d1);
+int Read_TaskManager(const OS_XML *xml, xml_node *node, void *d1);
+
+/**
+ * @brief Read the configuration for logtest thread
+ * @param node rule_test configuration
+ */
+int Read_Logtest(XML_NODE node);
 
 /* Verifies that the configuration for Syscheck is correct. Return 0 on success or -1 on error.  */
 int Test_Syscheck(const char * path);

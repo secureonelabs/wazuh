@@ -11,6 +11,8 @@
 #ifndef AGENT_OP_H
 #define AGENT_OP_H
 
+#include "external/cJSON/cJSON.h"
+
 /**
  * @brief Check if syscheck is to be executed/restarted
  * @return 1 on success or 0 on failure (shouldn't be executed now).
@@ -54,6 +56,7 @@ char *os_read_agent_profile(void);
 int os_write_agent_info(const char *agent_name, const char *agent_ip, const char *agent_id,
                         const char *cfg_profile_name) __attribute__((nonnull(1, 3)));
 
+#ifndef CLIENT
 /* Read agent group. Returns 0 on success or -1 on failure. */
 int get_agent_group(const char *id, char *group, size_t size);
 
@@ -63,23 +66,17 @@ int set_agent_group(const char * id, const char * group);
 /* Create multigroup dir. Returns 0 on success or -1 on failure. */
 int create_multigroup_dir(const char * multigroup);
 
-/*
- * Parse manager hostname from agent-info file.
- * If no such file, returns NULL.
- */
+int set_agent_multigroup(char * group);
 
-char* hostname_parse(const char *path);
+void w_remove_multigroup(const char *group);
+
+#endif
 
 /* Validates the group name
  * @params response must be a 2048 buffer or NULL
  * Returns 0 on success or  -x on failure
  */
-
 int w_validate_group_name(const char *group, char *response);
-
-int set_agent_multigroup(char * group);
-
-void w_remove_multigroup(const char *group);
 
 // Connect to Agentd. Returns socket or -1 on error.
 int auth_connect();
@@ -96,6 +93,13 @@ int w_request_agent_add_clustered(char *err_response, const char *name, const ch
 
 // Send a clustered agent remove request.
 int w_request_agent_remove_clustered(char *err_response, const char* agent_id, int purge);
+
+// Sends message thru the cluster
+int w_send_clustered_message(const char* command, const char* payload, char* response);
+
+// Alloc and create sendsync command payload
+cJSON* w_create_sendsync_payload(const char *daemon_name, cJSON *message);
+
 #endif
 
 // Get the agent id

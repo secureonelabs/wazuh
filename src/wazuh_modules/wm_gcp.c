@@ -31,7 +31,8 @@ const wm_context WM_GCP_CONTEXT = {
     GCP_WM_NAME,
     (wm_routine)wm_gcp_main,
     (wm_routine)(void *)wm_gcp_destroy,
-    (cJSON * (*)(const void *))wm_gcp_dump
+    (cJSON * (*)(const void *))wm_gcp_dump,
+    NULL
 };
 
 #ifdef WAZUH_UNIT_TESTING
@@ -84,7 +85,13 @@ void wm_gcp_run(const wm_gcp *data) {
     // Create arguments
     mtdebug2(WM_GCP_LOGTAG, "Create argument list");
 
-    wm_strcat(&command, WM_GCP_SCRIPT_PATH, '\0');
+    char * script = NULL;
+    os_calloc(PATH_MAX, sizeof(char), script);
+
+    snprintf(script, PATH_MAX, "%s", WM_GCP_SCRIPT_PATH);
+
+    wm_strcat(&command, script, '\0');
+    os_free(script);
 
     if (data->project_id) {
         wm_strcat(&command, "--project", ' ');
@@ -159,7 +166,7 @@ void wm_gcp_run(const wm_gcp *data) {
     }
 
     char *line;
-    char *save_ptr;
+    char *save_ptr = NULL;
 
     for (line = strtok_r(output, "\n", &save_ptr); line; line = strtok_r(NULL, "\n", &save_ptr)) {
         switch (data->logging) {

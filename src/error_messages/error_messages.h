@@ -1,4 +1,4 @@
-/* Copyright (C) 2015-2020, Wazuh Inc.
+/* Copyright (C) 2015-2021, Wazuh Inc.
  * Copyright (C) 2009 Trend Micro Inc.
  * All right reserved.
  *
@@ -21,9 +21,9 @@
 #define NULL_ERROR    "(1105): Attempted to use null string."
 #define FORMAT_ERROR  "(1106): String not correctly formatted."
 #define MKDIR_ERROR   "(1107): Could not create directory '%s' due to [(%d)-(%s)]."
-//#define PERM_ERROR    "%s(1108): ERROR: Permission error. Operation not completed."
+#define HOME_ERROR    "(1108): Unable to find Wazuh install directory. Export it to WAZUH_HOME environment variable."
 #define THREAD_ERROR  "(1109): Unable to create new pthread."
-//#define READ_ERROR    "%s(1110): ERROR: Unable to read from socket."
+#define FWRITE_ERROR  "(1110): Could not write file '%s' due to [(%d)-(%s)]."
 #define WAITPID_ERROR "(1111): Error during waitpid()-call due to [(%d)-(%s)]."
 #define SETSID_ERROR  "(1112): Error during setsid()-call due to [(%d)-(%s)]."
 #define MUTEX_ERROR   "(1113): Unable to set pthread mutex."
@@ -31,7 +31,7 @@
 #define FREAD_ERROR   "(1115): Could not read from file '%s' due to [(%d)-(%s)]."
 #define FSEEK_ERROR   "(1116): Could not set position in file '%s' due to [(%d)-(%s)]."
 #define FILE_ERROR    "(1117): Error handling file '%s' (date)."
-#define FSTAT_ERROR   "(1117): Could not retrieve information of file '%s' due to [(%d)-(%s)]."
+#define FSTAT_ERROR   "(1118): Could not retrieve information of file '%s' due to [(%d)-(%s)]."
 #define FGETS_ERROR   "(1119): Invalid line on file '%s': %s."
 //#define PIPE_ERROR    "%s(1120): ERROR: Pipe error."
 #define GLOB_ERROR    "(1121): Glob error. Invalid pattern: '%s'."
@@ -57,6 +57,8 @@
 #define GLOB_ERROR_WIN "(1141): Glob error. Invalid pattern: '%s' or no files found."
 #define NICE_ERROR      "(1142): Cannot set process priority: %s (%d)."
 #define RMDIR_ERROR     "(1143): Unable to delete folder '%s' due to [(%d)-(%s)]."
+#define ATEXIT_ERROR    "(1144): Unable to set exit function"
+
 
 /* COMMON ERRORS */
 #define CONN_ERROR      "(1201): No remote connection configured."
@@ -141,6 +143,8 @@
 #define NO_REM_CONN     "(1750): No remote connection configured. Exiting."
 #define NO_CLIENT_KEYS  "(1751): File client.keys not found or empty."
 
+#define REMOTED_NET_PROTOCOL_NOT_SET  "(1752): Network protocol is not set."
+
 /* 1760 - 1769 -- reserved for maild */
 
 /* Active Response */
@@ -160,6 +164,9 @@
 #define EXEC_INV_CONF   "(1313): Invalid active response config: '%s'."
 #define EXEC_DISABLED   "(1350): Active response disabled."
 #define EXEC_SHUTDOWN   "(1314): Shutdown received. Deleting responses."
+#define EXEC_INV_JSON   "(1315): Invalid JSON message: '%s'"
+#define EXEC_INV_CMD    "(1316): Invalid AR command: '%s'"
+#define EXEC_CMD_FAIL   "(1317): Could not launch command %s (%d)"
 
 #define AR_NOAGENT_ERROR    "(1320): Agent '%s' not found."
 
@@ -168,6 +175,13 @@
 #define LIST_ADD_ERROR  "(1291): Error adding nodes to list."
 #define LIST_SIZE_ERROR "(1292): Error setting error size."
 #define LIST_FREE_ERROR "(1293): Error setting data free pointer."
+
+/* Hash operation */
+#define HASH_ERROR      "(1295): Unable to create a new hash (calloc)."
+#define HCREATE_ERROR   "(1296): Unable to create a '%s' hash table"
+#define HSETSIZE_ERROR  "(1297): Unable to set size of '%s' hash table"
+#define HADD_ERROR      "(1298): Failure to add '%s' to '%s' hash table"
+#define HUPDATE_ERROR   "(1299): Failure to update '%s' to '%s' hash table"
 
 /* Log collector messages */
 #define MISS_LOG_FORMAT "(1901): Missing 'log_format' element."
@@ -198,6 +212,8 @@
 #define NON_TEXT_FILE   "(1964): File '%s' is not ASCII or UTF-8 encoded."
 #define EXCLUDE_FILE    "(1965): File excluded: '%s'."
 #define DUP_FILE_INODE  "(1966): Inode for file '%s' already found. Skipping it."
+#define LOCALFILE_REGEX "(1967): Syntax error on multiline_regex: '%s'"
+#define MISS_MULT_REGEX "(1968): Missing 'multiline_regex' element."
 
 /* Encryption/auth errors */
 #define INVALID_KEY     "(1401): Error reading authentication key: '%s'."
@@ -214,6 +230,7 @@
 /* Regex errors */
 #define REGEX_COMPILE   "(1450): Syntax error on regex: '%s': %d."
 #define REGEX_SUBS      "(1451): Missing sub_strings on regex: '%s'."
+#define REGEX_SYNTAX    "(1452): Syntax error on regex: '%s'"
 
 /* Mail errors */
 #define INVALID_SMTP    "(1501): Invalid SMTP Server: %s"
@@ -234,6 +251,8 @@
 
 #define INV_OFFSET      "(2120): Invalid offset value: '%s'"
 #define INV_ATTR        "(2121): Invalid decoder attribute: '%s'"
+#define INV_VAL         "(2122): Invalid value for attribute: '%s'"
+#define INV_VAL_ATTR    "(2123): Invalid value '%s' for attribute: '%s'"
 
 /* os_zlib */
 #define COMPRESS_ERR    "(2201): Error compressing string: '%s'."
@@ -253,8 +272,6 @@
 #define EVTLOG_GETLAST  "(4107): Unable to query last event log from: '%s'."
 #define EVTLOG_DUP      "(4108): Duplicated event log entry: '%s'."
 #define AG_NOKEYS_EXIT  "(4109): Unable to start without auth keys. Exiting."
-#define AG_MAX_ERROR    "(4110): Maximum number of agents '%d' reached."
-#define AG_AX_AGENTS    "(4111): Maximum number of agents allowed: '%d'."
 #define AG_INV_MNGIP    "(4112): Invalid server address found: '%s'"
 #define AG_ENROLL_FAIL  "(4113): Auto Enrollment configuration failed."
 
@@ -266,6 +283,7 @@
 #define RL_INV_ATTR     "(5105): Invalid rule attributes inside file: '%s'."
 #define RL_NO_OPT       "(5106): Rule '%d' without any options. "\
                         "It may lead to false positives. Exiting. "
+#define RL_REGEX_SYNTAX "(5107): Syntax error on tag '%s' in rule %d"
 
 /* Syslog output */
 #define XML_INV_CSYSLOG "(5301): Invalid client-syslog configuration."
@@ -279,17 +297,20 @@
 #define XML_INV_MISSOPTS    "(7103): Missing agentless options."
 
 /* Database messages */
-#define DBINIT_ERROR    "(5201): Error initializing database handler."
-#define DBCONN_ERROR    "(5202): Error connecting to database '%s'(%s): ERROR: %s."
-#define DBQUERY_ERROR   "(5203): Error executing query '%s'. Error: '%s'."
-#define DB_GENERROR     "(5204): Database error. Unable to run query."
-#define DB_MISS_CONFIG  "(5205): Missing database configuration. "\
-                        "It requires host, user, pass and database."
-#define DB_CONFIGERR    "(5206): Database configuration error."
-#define DB_COMPILED     "(5207): OSSEC not compiled with support for '%s'."
-#define DB_MAINERROR    "(5208): Multiple database errors. Exiting."
-#define DB_CLOSING      "(5209): Closing connection to database."
-#define DB_ATTEMPT      "(5210): Attempting to reconnect to database."
+#define DBINIT_ERROR          "(5201): Error initializing database handler."
+#define DBCONN_ERROR          "(5202): Error connecting to database '%s'(%s): ERROR: %s."
+#define DBQUERY_ERROR         "(5203): Error executing query '%s'. Error: '%s'."
+#define DB_GENERROR           "(5204): Database error. Unable to run query."
+#define DB_MISS_CONFIG        "(5205): Missing database configuration. "\
+                              "It requires host, user, pass and database."
+#define DB_CONFIGERR          "(5206): Database configuration error."
+#define DB_COMPILED           "(5207): Wazuh not compiled with support for '%s'."
+#define DB_MAINERROR          "(5208): Multiple database errors. Exiting."
+#define DB_CLOSING            "(5209): Closing connection to database."
+#define DB_ATTEMPT            "(5210): Attempting to reconnect to database."
+#define DB_SQL_ERROR          "(5211): SQL error: '%s'"
+#define DB_TRANSACTION_ERROR  "(5212): Cannot begin transaction."
+#define DB_CACHE_ERROR        "(5213): Cannot cache statement."
 
 /* vulnerability-detector messages*/
 #define VU_FETCH_ERROR              "(5500): The '%s' database could not be fetched."
@@ -380,6 +401,10 @@
 #define VU_GET_NVD_YEAR_ERROR       "(5585): Couldn't get the NVD configured year."
 #define VU_NO_ENABLED_FEEDS         "(5586): No feeds specified for '%s' provider. Enabling all the available ones."
 #define VU_OFFLINE_CONFLICT         "(5587): Feed conflict. Only '%s' will be updated offline."
+#define VU_VER_INVALID_FORMAT       "(5588): Invalid format of Wazuh version for agent '%.3d'"
+#define VU_VER_READING_ERROR        "(5589): Couldn't read Wazuh version for agent '%.3d'"
+#define VU_OVAL_VULN_NOT_FOUND      "(5590): No vulnerabilities could be found in the OVAL for agent '%.3d'"
+#define VU_PKG_INVALID_VER          "(5591): Invalid version for package '%s' of the inventory: '%s'"
 
 /* File integrity monitoring error messages*/
 #define FIM_ERROR_ADD_FILE                          "(6600): Unable to add file to db: '%s'"
@@ -398,7 +423,7 @@
 #define FIM_ERROR_REALTIME_WINDOWS_CALLBACK_EMPTY   "(6614): Real time call back called, but hash is empty."
 #define FIM_ERROR_UPDATE_ENTRY                      "(6615): Can't update entry invalid file '%s'."
 #define FIM_ERROR_REALTIME_MAXNUM_WATCHES           "(6616): Unable to add directory to real time monitoring: '%s' - Maximum size permitted."
-
+#define FIM_ERROR_AUDIT_MODE                        "(6617): Unable to get audit mode: %s (%d)."
 #define FIM_ERROR_REALTIME_INITIALIZE               "(6618): Unable to initialize real time file monitoring."
 #define FIM_ERROR_WHODATA_ADD_DIRECTORY             "(6619): Unable to add directory to whodata real time monitoring: '%s'. It will be monitored in Realtime"
 #define FIM_ERROR_WHODATA_AUDIT_SUPPORT             "(6620): Audit support not built. Whodata is not available."
@@ -488,11 +513,104 @@
 #define FIM_DB_ERROR_COUNT_RANGE                    "(6703): Couldn't get range size between '%s' and '%s'"
 #define FIM_DB_ERROR_GET_PATH                       "(6704): Couldn't get path of '%s'"
 #define FIM_DB_ERROR_SYNC_DB                        "(6705): Failed to synchronize database."
-#define FIM_DB_ERROR_GET_ROW_PATH                   "(6706): Couldn't get %s row's path."
+#define FIM_DB_ERROR_GET_ROW_PATH                   "(6706): Couldn't get %s %s row's path."
 #define FIM_DB_ERROR_CALC_CHECKSUM                  "(6707): Failed to calculate database checksum."
-#define FIM_DB_ERROR_RM_RANGE                       "(6708): Failed to delete a range of paths between '%s' and '%s'"
+#define FIM_DB_ERROR_RM_PATTERN                     "(6708): Failed to delete a range of paths using pattern '%s'."
 #define FIM_DB_ERROR_RM_NOT_SCANNED                 "(6709): Failed to delete from db all unscanned files."
 #define FIM_ERROR_WHODATA_INIT                      "(6710): Failed to start the Whodata engine. Directories/files will be monitored in Realtime mode"
+#define FIM_ERROR_GET_ABSOLUTE_PATH                 "(6711): Cannot get absolute path of '%s': %s (%d)"
+#define FIM_ERROR_REMOVE_COLON                      "(6712): Cannot remove heading colon from full path '%s'"
+#define FIM_DIFF_DELETE_DIFF_FOLDER_ERROR           "(6713): Cannot remove diff folder for file: '%s'"
+#ifdef WIN32
+#define FIM_DIFF_COMMAND_OUTPUT_ERROR               "(6714): Command fc output an error"
+#else
+#define FIM_DIFF_COMMAND_OUTPUT_ERROR               "(6714): Command diff output an error"
+#endif
+#define FIM_DIFF_FILE_PATH_TOO_LONG                 "(6715): The path of the file monitored '%s' is too long to compute differences."
+#define FIM_WARN_OPEN_HANDLE_FILE                   "(6716): Could not open handle for '%s'. Error code: %lu"
+#define FIM_WARN_GET_FILETIME                       "(6717): Could not get the filetime of the file '%s'. Error code: %lu."
+#ifndef WIN32
+#define FIM_ERROR_EXPAND_ENV_VAR                    "(6718): Could not expand the environment variable %s."
+#else
+#define FIM_ERROR_EXPAND_ENV_VAR                    "(6718): Could not expand the environment variable %s (%ld)."
+#endif
+
+/* Wazuh Logtest error messsages */
+#define LOGTEST_ERROR_BIND_SOCK                     "(7300): Unable to bind to socket '%s'. Errno: (%d) %s"
+#define LOGTEST_ERROR_ACCEPT_CONN                   "(7301): Failure to accept connection. Errno: %s"
+#define LOGTEST_ERROR_RECV_MSG_ERRNO                "(7302): Failure to receive message: Errno: %s"
+#define LOGTEST_ERROR_INIT_HASH                     "(7303): Failure to initialize all_sessions hash"
+#define LOGTEST_ERROR_INV_CONF                      "(7304): Invalid wazuh-logtest configuration"
+#define LOGTEST_ERROR_SIZE_HASH                     "(7305): Failure to resize all_sessions hash"
+#define LOGTEST_ERROR_COMMAND_NOT_ALLOWED           "(7306): Unable to process command"
+#define LOGTEST_ERROR_JSON_PARSE_POS                "(7307): Error parsing JSON in position %i, ... %s ..."
+#define LOGTEST_ERROR_JSON_REQUIRED_SFIELD          "(7308): '%s' JSON field is required and must be a string"
+#define LOGTEST_ERROR_TOKEN_INVALID                 "(7309): '%s' is not a valid token"
+#define LOGTEST_ERROR_RESPONSE                      "(7310): Failure to sending response to client [%i] %s."
+#define LOGTEST_ERROR_INITIALIZE_SESSION            "(7311): Failure to initializing session"
+#define LOGTEST_ERROR_PROCESS_EVENT                 "(7312): Failed to process the event"
+#define LOGTEST_ERROR_FIELD_NOT_FOUND               "(7313): '%s' JSON field not found"
+#define LOGTEST_ERROR_RECV_MSG_EMPTY_TO             "(7314): Failure to receive message: empty or reception timeout"
+#define LOGTEST_ERROR_RECV_MSG_OVERSIZE             "(7315): Failure to receive message: size is bigger than expected"
+#define LOGTEST_ERROR_TOKEN_INVALID_TYPE            "(7316): Failure to remove session. token JSON field must be a string"
+#define LOGTEST_ERROR_FIELD_NOT_VALID               "(7317): '%s' JSON field value is not valid"
+#define LOGTEST_ERROR_REMOVE_SESSION                "(7318): Failure to remove session '%s'"
+
+/* Modules messages */
+#define WM_UPGRADE_JSON_PARSE_ERROR                 "(8101): Cannot parse JSON: '%s'"
+#define WM_UPGRADE_UNDEFINED_ACTION_ERRROR          "(8102): No action defined for command: '%s'"
+#define WM_UPGRADE_COMMAND_PARSE_ERROR              "(8103): Error parsing command: '%s'"
+#define WM_UPGRADE_UNREACHEABLE_TASK_MANAGER        "(8104): Cannot connect to '%s'. Could not reach task manager module."
+#define WM_UPGRADE_INVALID_TASK_MAN_JSON            "(8105): Response from task manager does not have a valid JSON format."
+#define WM_UPGRADE_TASK_EMPTY_MESSAGE               "(8106): Empty message from task manager module."
+#define WM_UPGRADE_REQUIRED_PARAMETERS              "(8107): Required parameters in message are missing."
+#define WM_UPGRADE_BIND_SOCK_ERROR                  "(8108): Unable to bind to socket '%s': '%s'"
+#define WM_UPGRADE_SELECT_ERROR                     "(8109): Error in select(): '%s'. Exiting..."
+#define WM_UPGRADE_ACCEPT_ERROR                     "(8110): Error in accept(): '%s'"
+#define WM_UPGRADE_RECV_ERROR                       "(8111): Error in recv(): '%s'"
+#define WM_UPGRADE_SOCKTERR_ERROR                   "(8112): Response size is bigger than expected."
+#define WM_UPGRADE_QUEUE_FD                         "(8113): Could not open default queue to send upgrade notification."
+#define WM_UPGRADE_UNREACHEABLE_REQUEST             "(8114): Cannot connect to '%s'. Could not reach agent."
+#define WM_UPGRADE_EMPTY_AGENT_RESPONSE             "(8115): Response from agent is empty."
+#define WM_UPGRADE_AGENT_RESPONSE_MESSAGE_ERROR     "(8116): Error response from agent: '%s'"
+#define WM_UPGRADE_AGENT_RESPONSE_UNKNOWN_ERROR     "(8117): Unknown error from agent."
+#define WM_UPGRADE_AGENT_RESPONSE_SHA1_ERROR        "(8118): The SHA1 of the file doesn't match in the agent."
+#define WM_UPGRADE_TASK_UPDATE_ERROR                "(8119): There has been an error updating task state. Error code: '%d', message: '%s'"
+#define WM_UPGRADE_RESULT_FILE_ERROR                "(8120): Agent was unable to erase upgrade_result file. Reason: '%s'"
+#define WM_UPGRADE_AGENT_RESPONSE_SCRIPT_ERROR      "(8121): Script execution failed in the agent."
+#define WM_UPGRADE_UPGRADE_QUEUE_FULL               "(8122): Upgrade queue is full. Agent '%d' won't be upgraded."
+#define WM_UPGRADE_TASK_MANANAGER_ERROR             "(8123): There has been an error executing the request in the tasks manager."
+#define WM_UPGRADE_FILE_OPENED                      "(8124): At %s: File '%s' was opened. Closing."
+#define WM_UPGRADE_UNSUPPORTED_MODE                 "(8125): At %s: Unsupported mode."
+#define WM_UPGRADE_INVALID_FILE_NAME                "(8126): At %s: Invalid file name."
+#define WM_UPGRADE_FILE_NOT_OPENED_AUTO             "(8127): At %s: File not opened. Agent might have been auto-restarted during upgrade."
+#define WM_UPGRADE_DIFFERENT_FILE                   "(8128): At %s: The target file doesn't match the opened file '%s'"
+#define WM_UPGRADE_CANNOT_WRITE                     "(8129): At %s: Cannot write on '%s'"
+#define WM_UPGRADE_FILE_NOT_OPENED                  "(8130): At %s: No file is opened."
+#define WM_UPGRADE_GERENIC_ERROR                    "(8131): At %s: '%s'"
+#define WM_UPGRADE_GENERATING_SHA1_ERROR            "(8132): At %s: Error generating SHA1."
+#define WM_UPGRADE_UNMERGING_FILE_ERROR             "(8133): At %s: Error unmerging file: '%s'"
+#define WM_UPGRADE_CHMOD_ERROR                      "(8134): At %s: Could not chmod '%s'"
+#define WM_UPGRADE_COMMAND_ERROR                    "(8135): At %s: Error executing command [%s]"
+#define WM_UPGRADE_ERASE_FILE_ERROR                 "(8136): At %s: Could not erase file '%s'"
+#define WM_UPGRADE_TOO_LONG_TEMP_FILE               "(8137): At %s: Too long temp file."
+#define WM_UPGRADE_COMPRESSED_FILE_ERROR            "(8138): At %s: Could not create temporary compressed file."
+#define WM_UPGRADE_UNSIGN_FILE_ERROR                "(8139): At %s: Could not unsign package file '%s'"
+#define WM_UPGRADE_FILE_OPEN_ERROR                  "(8140): At %s: Unable to open '%s'"
+#define WM_UPGRADE_CANNOT_READ                      "(8141): At %s: Unable to read '%s'"
+
+#define MOD_TASK_CHECK_DB_ERROR                     "(8250): DB integrity is invalid. Exiting..."
+#define MOD_TASK_CREATE_SOCK_ERROR                  "(8251): Queue '%s' not accessible: '%s'. Exiting..."
+#define MOD_TASK_SELECT_ERROR                       "(8252): Error in select(): '%s'. Exiting..."
+#define MOD_TASK_ACCEPT_ERROR                       "(8253): Error in accept(): '%s'"
+#define MOD_TASK_RECV_ERROR                         "(8254): Error in recv(): '%s'"
+#define MOD_TASK_SOCKTERR_ERROR                     "(8255): Response size is bigger than expected."
+#define MOD_TASK_LENGTH_ERROR                       "(8256): Received message > '%i'"
+#define MOD_TASK_PARSE_JSON_ERROR                   "(8257): Error parsing JSON event: '%s'"
+#define MOD_TASK_UNDEFINED_ACTION_ERRROR            "(8258): No action defined for command provided."
+#define MOD_TASK_PARSE_KEY_ERROR                    "(8259): Invalid message. '%s' not found."
+#define MOD_TASK_INVALID_ELEMENT_ERROR              "(8260): Invalid element in array."
+#define MOD_TASK_DB_ERROR                           "(8261): Database error."
 
 /* Verbose messages */
 #define STARTUP_MSG "Started (pid: %d)."
@@ -503,9 +621,9 @@
                         " access list (allowed-ips). Syslog server disabled."
 #define CONN_TO     "Connected to '%s' (%s queue)"
 #define MAIL_DIS    "E-Mail notification disabled. Clean Exit."
+#define WAZUH_HOMEDIR "Wazuh home directory: %s"
 
 /* Debug Messages */
-#define STARTED_MSG "Starting ..."
 #define FOUND_USER  "Found user/group ..."
 #define ASINIT      "Active response initialized ..."
 #define READ_CONFIG "Read configuration ..."
@@ -528,6 +646,7 @@
 /* OSSEC alert messages */
 #define OS_AD_STARTED   "ossec: Ossec started."
 #define OS_AG_STARTED   "ossec: Agent started: '%s->%s'."
+#define OS_AG_STOPPED   "ossec: Agent stopped: '%s->%s'."
 #define OS_AG_DISCON    "ossec: Agent disconnected: '%s'."
 #define OS_AG_REMOVED   "ossec: Agent removed: '%s'."
 

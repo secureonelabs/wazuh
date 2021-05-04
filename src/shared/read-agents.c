@@ -12,7 +12,7 @@
 #include "read-agents.h"
 #include "os_net/os_net.h"
 #include "wazuhdb_op.h"
-#include "wazuh_db/wdb.h"
+#include "wazuh_db/helpers/wdb_global_helpers.h"
 
 #ifndef WIN32
 static int _do_print_attrs_syscheck(const char *prev_attrs, const char *attrs, int csv_output, cJSON *json_output,
@@ -825,13 +825,13 @@ void delete_sqlite(const char *id, const char *name)
     char path[512] = { '\0' };
 
     /* Delete related files */
-    snprintf(path, 511, "%s%s/agents/%s-%s.db", isChroot() ? "/" : "", WDB_DIR, id, name);
+    snprintf(path, 511, "%s/agents/%s-%s.db", WDB_DIR, id, name);
     unlink(path);
 
-    snprintf(path, 511, "%s%s/agents/%s-%s.db-wal", isChroot() ? "/" : "", WDB_DIR, id, name);
+    snprintf(path, 511, "%s/agents/%s-%s.db-wal", WDB_DIR, id, name);
     unlink(path);
 
-    snprintf(path, 511, "%s%s/agents/%s-%s.db-shm", isChroot() ? "/" : "", WDB_DIR, id, name);
+    snprintf(path, 511, "%s/agents/%s-%s.db-shm", WDB_DIR, id, name);
     unlink(path);
 }
 
@@ -886,10 +886,12 @@ const char *print_agent_status(agent_status_t status)
         return "Active";
     case GA_STATUS_NACTIVE:
         return "Disconnected";
-    case GA_STATUS_INV:
+    case GA_STATUS_NEVER:
         return "Never connected";
     case GA_STATUS_PENDING:
         return "Pending";
+    case GA_STATUS_UNKNOWN:
+        return "Unknown";
     default:
         return "(undefined)";
     }
@@ -903,9 +905,8 @@ const char *print_agent_status(agent_status_t status)
  */
 int send_msg_to_agent(int msocket, const char *msg, const char *agt_id, const char *exec)
 {
-    int rc;
-    char *agt_msg;
-    os_malloc(OS_MAXSTR * sizeof(char), agt_msg);
+    char agt_msg[OS_MAXSTR + 1];
+    char exec_msg[OS_SIZE_20480 + 1];
 
     if (!exec) {
         snprintf(agt_msg, OS_MAXSTR,
@@ -916,30 +917,130 @@ int send_msg_to_agent(int msocket, const char *msg, const char *agt_id, const ch
                  (agt_id != NULL) ? SPECIFIC_AGENT_C : NONE_C,
                  agt_id != NULL ? agt_id : "(null)",
                  msg);
-    } else {
-        snprintf(agt_msg, OS_SIZE_20480,
-                 "%s %c%c%c %s %s - %s (from_the_server) (no_rule_id)",
-                 "(msg_to_agent) []",
-                 (agt_id == NULL) ? ALL_AGENTS_C : NONE_C,
-                 NONE_C,
-                 (agt_id != NULL) ? SPECIFIC_AGENT_C : NONE_C,
-                 agt_id != NULL ? agt_id : "(null)",
-                 msg, exec);
 
-    }
-
-    if ((rc = OS_SendUnix(msocket, agt_msg, 0)) < 0) {
-        if (rc == OS_SOCKBUSY) {
-            merror("Remoted socket busy.");
-        } else {
-            merror("Remoted socket error.");
+        if ((OS_SendUnix(msocket, agt_msg, 0)) < 0) {
+            merror("Error communicating with remoted queue.");
+            return (-1);
         }
-        merror("Error communicating with remoted queue (%d).", rc);
-        free(agt_msg);
-        return (-1);
+    } else {
+        int sock = -1;
+        int *id_array = NULL;
+
+        if (agt_id == NULL) {
+            id_array = wdb_get_all_agents(FALSE, &sock);
+            if(!id_array) {
+                merror("Unable to get agent's ID array.");
+                wdbc_close(&sock);
+                return (-1);
+            }
+        } else {
+            os_calloc(2, sizeof(int), id_array);
+            id_array[0] = atoi(agt_id);
+            id_array[1] = OS_INVALID;
+        }
+
+        for (size_t i = 0; id_array[i] != OS_INVALID; i++) {
+            cJSON *json_agt_info = NULL;
+            cJSON *json_agt_version = NULL;
+            char c_agent_id[OS_SIZE_16];
+            char *agt_version = NULL;
+
+            memset(agt_msg, 0, OS_MAXSTR + 1);
+            memset(exec_msg, 0, OS_SIZE_20480 + 1);
+
+            json_agt_info = wdb_get_agent_info(id_array[i], &sock);
+            if (!json_agt_info) {
+                merror("Failed to get agent '%d' information from Wazuh DB.", id_array[i]);
+                continue;
+            }
+
+            json_agt_version = cJSON_GetObjectItem(json_agt_info->child, "version");
+
+            if(cJSON_IsString(json_agt_version) && json_agt_version->valuestring != NULL) {
+                agt_version = json_agt_version->valuestring;
+            } else {
+                mdebug2("Failed to get agent '%d' version.", id_array[i]);
+                cJSON_Delete(json_agt_info);
+                continue;
+            }
+
+            // New AR mechanism is not supported in versions prior to 4.2.0
+            char *save_ptr = NULL;
+            strtok_r(agt_version, "v", &save_ptr);
+            char *major = strtok_r(NULL, ".", &save_ptr);
+            char *minor = strtok_r(NULL, ".", &save_ptr);
+            if (!major || !minor) {
+                merror("Unable to read agent version.");
+                cJSON_Delete(json_agt_info);
+                continue;
+            } else {
+                if (atoi(major) < 4 || (atoi(major) == 4 && atoi(minor) < 2)) {
+                    snprintf(exec_msg, OS_SIZE_20480,
+                             "%s - %s (from_the_server) (no_rule_id)",
+                             msg, exec);
+                } else {
+                    cJSON *json_message = cJSON_CreateObject();
+                    cJSON *json_alert = cJSON_CreateObject();
+                    cJSON *json_data = cJSON_CreateObject();
+                    cJSON *_object = NULL;
+                    cJSON *_array = NULL;
+                    char *tmp_msg = NULL;
+
+                    // Version
+                    cJSON_AddNumberToObject(json_message, "version", 1);
+
+                    // Origin
+                    _object = cJSON_CreateObject();
+                    cJSON_AddItemToObject(json_message, "origin", _object);
+
+                    cJSON_AddStringToObject(_object, "name", "");
+                    cJSON_AddStringToObject(_object, "module", "");
+
+                    // Command
+                    cJSON_AddStringToObject(json_message, "command", msg);
+
+                    // Parameters
+                    _object = cJSON_CreateObject();
+                    cJSON_AddItemToObject(json_message, "parameters", _object);
+
+                    _array = cJSON_CreateArray();
+                    cJSON_AddItemToObject(_object, "extra_args", _array);
+
+                    cJSON_AddItemToObject(json_alert, "data", json_data);
+                    cJSON_AddStringToObject(json_data, "srcip", exec);
+                    cJSON_AddItemToObject(_object, "alert", json_alert);
+
+                    // Message
+                    tmp_msg = cJSON_PrintUnformatted(json_message);
+                    strncpy(exec_msg, tmp_msg, OS_SIZE_20480);
+
+                    os_free(tmp_msg);
+                    cJSON_Delete(json_message);
+                }
+            }
+
+            cJSON_Delete(json_agt_info);
+
+            snprintf(c_agent_id, OS_SIZE_16, "%.3d", id_array[i]);
+
+            snprintf(agt_msg, OS_MAXSTR,
+                     "%s %c%c%c %s %s",
+                     "(msg_to_agent) []",
+                     NONE_C,
+                     NONE_C,
+                     SPECIFIC_AGENT_C,
+                     c_agent_id,
+                     exec_msg);
+
+            if ((OS_SendUnix(msocket, agt_msg, 0)) < 0) {
+                merror("Error communicating with remoted queue.");
+            }
+        }
+
+        os_free(id_array);
+        wdbc_close(&sock);
     }
 
-    free(agt_msg);
     return (0);
 }
 
@@ -1109,7 +1210,7 @@ agent_info *get_agent_info(const char *agent_name, const char *agent_ip, const c
         return NULL;
     }
 
-    /* Allocate memory for the info structure */   
+    /* Allocate memory for the info structure */
     os_calloc(1, sizeof(agent_info), agt_info);
 
     json_field = cJSON_GetObjectItem(json_agt_info->child, "os_uname");
@@ -1138,6 +1239,25 @@ agent_info *get_agent_info(const char *agent_name, const char *agent_ip, const c
         os_strdup(keepalive_str, agt_info->last_keepalive);
     }
 
+    json_field = cJSON_GetObjectItem(json_agt_info->child, "connection_status");
+    if (cJSON_IsString(json_field)) {
+        if (0 == strcmp(json_field->valuestring, AGENT_CS_PENDING)) {
+            agt_info->connection_status = GA_STATUS_PENDING;
+        }
+        else if (0 == strcmp(json_field->valuestring, AGENT_CS_ACTIVE)) {
+            agt_info->connection_status = GA_STATUS_ACTIVE;
+        }
+        else if (0 == strcmp(json_field->valuestring, AGENT_CS_DISCONNECTED)) {
+            agt_info->connection_status = GA_STATUS_NACTIVE;
+        }
+        else if (0 == strcmp(json_field->valuestring, AGENT_CS_NEVER_CONNECTED)) {
+            agt_info->connection_status = GA_STATUS_NEVER;
+        }
+        else {
+            agt_info->connection_status = GA_STATUS_UNKNOWN;
+        }
+    }
+
     _get_time_rkscan(agent_name, agent_ip, agt_info, agent_id);
 
     cJSON_Delete(json_agt_info);
@@ -1149,38 +1269,33 @@ agent_info *get_agent_info(const char *agent_name, const char *agent_ip, const c
 agent_status_t get_agent_status(int agent_id){
     cJSON *json_agt_info = NULL;
     cJSON *json_field = NULL;
-    int last_keepalive = -1;
+    agent_status_t status = GA_STATUS_UNKNOWN;
 
     json_agt_info = wdb_get_agent_info(agent_id, NULL);
 
     if (!json_agt_info) {
         mdebug1("Failed to get agent '%d' information from Wazuh DB.", agent_id);
-        return GA_STATUS_INV;
-    }
-    
-    json_field = cJSON_GetObjectItem(json_agt_info->child, "last_keepalive");
-    if (cJSON_IsNumber(json_field)) {
-        last_keepalive = json_field->valueint;
-        cJSON_Delete(json_agt_info);
-    
-    } else {
-        cJSON_Delete(json_agt_info);
-        return GA_STATUS_INV;
+        return status;
     }
 
-    if (last_keepalive < 0) {
-        return (GA_STATUS_INV);
+    json_field = cJSON_GetObjectItem(json_agt_info->child, "connection_status");
+    if (cJSON_IsString(json_field)) {
+        if (0 == strcmp(json_field->valuestring, AGENT_CS_PENDING)) {
+            status = GA_STATUS_PENDING;
+        }
+        else if (0 == strcmp(json_field->valuestring, AGENT_CS_ACTIVE)) {
+            status = GA_STATUS_ACTIVE;
+        }
+        else if (0 == strcmp(json_field->valuestring, AGENT_CS_DISCONNECTED)) {
+            status = GA_STATUS_NACTIVE;
+        }
+        else if (0 == strcmp(json_field->valuestring, AGENT_CS_NEVER_CONNECTED)) {
+            status = GA_STATUS_NEVER;
+        }
     }
 
-    if (last_keepalive < (time(0) - DISCON_TIME)) {
-        return (GA_STATUS_NACTIVE);
-    }
-
-    if (last_keepalive == 0) {
-        return GA_STATUS_PENDING;
-    }
-
-    return (GA_STATUS_ACTIVE);
+    cJSON_Delete(json_agt_info);
+    return status;
 }
 
 /* List available agents */
@@ -1204,8 +1319,7 @@ char **get_agents(int flag){
     }
 
     for (i = 0; id_array[i] != -1; i++){
-        int status = 0;
-        int last_keepalive = -1;
+        agent_status_t status = GA_STATUS_UNKNOWN;
         char agent_name_ip[OS_SIZE_512] = "";
 
         json_agt_info = wdb_get_agent_info(id_array[i], &sock);
@@ -1218,30 +1332,34 @@ char **get_agents(int flag){
         json_ip = cJSON_GetObjectItem(json_agt_info->child, "register_ip");
 
         /* Keeping the same name structure than plain text files in AGENTINFO_DIR */
-        if(cJSON_IsString(json_name) && json_name->valuestring != NULL && 
+        if(cJSON_IsString(json_name) && json_name->valuestring != NULL &&
             cJSON_IsString(json_ip) && json_ip->valuestring != NULL){
             snprintf(agent_name_ip, sizeof(agent_name_ip), "%s-%s", json_name->valuestring, json_ip->valuestring);
         }
 
-        json_field = cJSON_GetObjectItem(json_agt_info->child, "last_keepalive");
-        if(cJSON_IsNumber(json_field)){
-            last_keepalive = json_field->valueint;
+        json_field = cJSON_GetObjectItem(json_agt_info->child, "connection_status");
+        if(!cJSON_IsString(json_field)){
+            cJSON_Delete(json_agt_info);
+            continue;
         }
+
+        status = !strcmp(json_field->valuestring, AGENT_CS_PENDING) ? GA_STATUS_PENDING :
+                 !strcmp(json_field->valuestring, AGENT_CS_ACTIVE) ? GA_STATUS_ACTIVE :
+                 !strcmp(json_field->valuestring, AGENT_CS_DISCONNECTED) ? GA_STATUS_NACTIVE :
+                 !strcmp(json_field->valuestring, AGENT_CS_NEVER_CONNECTED) ? GA_STATUS_NEVER : GA_STATUS_UNKNOWN;
         cJSON_Delete(json_agt_info);
-    
-        status = last_keepalive > (time(0) - DISCON_TIME) ? 1 : 0;
 
         switch (flag) {
             case GA_ALL:
             case GA_ALL_WSTATUS:
                 break;
             case GA_ACTIVE:
-                if(status == 0){
+                if(status != GA_STATUS_ACTIVE){
                     continue;
                 }
                 break;
             case GA_NOTACTIVE:
-                if(status == 1){
+                if(status != GA_STATUS_NACTIVE){
                     continue;
                 }
                 break;
@@ -1257,81 +1375,19 @@ char **get_agents(int flag){
         /* Add agent entry */
         if (flag == GA_ALL_WSTATUS) {
             char agt_stat[1024];
-
-            snprintf(agt_stat, sizeof(agt_stat) - 1, "%s %s",
-                     agent_name_ip, status == 1 ? "active" : "disconnected");
-
+            snprintf(agt_stat, sizeof(agt_stat) - 1, "%s %s", agent_name_ip, print_agent_status(status));
             os_strdup(agt_stat, agents_array[array_size]);
         } else {
             os_strdup(agent_name_ip, agents_array[array_size]);
         }
 
         agents_array[array_size + 1] = NULL;
-
         array_size++;
     }
 
     wdbc_close(&sock);
     os_free(id_array);
     return (agents_array);
-}
-
-char **get_agents_by_last_keepalive(int flag, int delta){
-    size_t array_size = 0;
-    char **agents_array = NULL;
-    int *id_array = NULL;
-    int i = 0;
-    cJSON *json_agt_info = NULL;
-    cJSON *json_name = NULL;
-    cJSON *json_ip = NULL;
-    int sock = -1;
-
-    switch (flag) {
-        case GA_NOTACTIVE:
-            id_array = wdb_get_agents_by_keepalive("<", time(0)-delta, FALSE, &sock);
-            break;
-        case GA_ACTIVE:
-            id_array = wdb_get_agents_by_keepalive(">", time(0)-delta, FALSE, &sock);
-            break;
-        default:
-            mdebug1("Invalid flag '%d' trying to get agents.", flag);
-            return NULL;
-    }
-
-    if (!id_array) {
-        mdebug1("Failed getting agent's ID array.");
-        wdbc_close(&sock);
-        return (NULL);
-    }
-
-    for (i = 0; id_array[i] != -1; i++){
-        char agent_name_ip[OS_SIZE_512] = "";
-
-        json_agt_info = wdb_get_agent_info(id_array[i], &sock);
-        if (!json_agt_info) {
-            mdebug1("Failed to get agent '%d' information from Wazuh DB.", id_array[i]);
-            continue;
-        }
-
-        json_name= cJSON_GetObjectItem(json_agt_info->child, "name");
-        json_ip = cJSON_GetObjectItem(json_agt_info->child, "register_ip");
-
-        /* Keeping the same name structure than plain text files in AGENTINFO_DIR */
-        if(cJSON_IsString(json_name) && json_name->valuestring != NULL && 
-            cJSON_IsString(json_ip) && json_ip->valuestring != NULL){
-            snprintf(agent_name_ip, sizeof(agent_name_ip), "%s-%s", json_name->valuestring, json_ip->valuestring);
-            os_realloc(agents_array, (array_size + 2) * sizeof(char *), agents_array);
-            os_strdup(agent_name_ip, agents_array[array_size]);
-            agents_array[array_size + 1] = NULL;
-            array_size++;
-        }
-
-        cJSON_Delete(json_agt_info);
-    }
-
-    wdbc_close(&sock);
-    os_free(id_array);
-    return agents_array;
 }
 
 #ifndef WIN32

@@ -192,15 +192,17 @@ void W_JSON_AddField(cJSON *root, const char *key, const char *value) {
 
         free(current);
     } else if (!cJSON_GetObjectItem(root, key)) {
-        char *string_end =  NULL;
+        const char *jsonErrPtr;
+        cJSON * value_json = NULL;
+
         if (*value == '[' &&
-           (string_end = memchr(value, '\0', OS_MAXSTR)) &&
-           (string_end != NULL) &&
-           (']' == *(string_end - 1)))
-        {
-            const char *jsonErrPtr;
-            cJSON_AddItemToObject(root, key, cJSON_ParseWithOpts(value, &jsonErrPtr, 0));
+           (value_json = cJSON_ParseWithOpts(value, &jsonErrPtr, 0), value_json) &&
+           (*jsonErrPtr == '\0')) {
+            cJSON_AddItemToObject(root, key, value_json);
         } else {
+            if (value_json) {
+                cJSON_Delete(value_json);
+            }
             cJSON_AddStringToObject(root, key, value);
         }
     }
@@ -946,4 +948,158 @@ int os_snprintf(char *str, size_t size, const char *format, ...) {
     va_end(args);
 
     return ret;
+}
+
+// Remove a substring from a string
+
+char * w_remove_substr(char *str, const char *sub) {
+    char *p, *q, *r;
+    if ((q = r = strstr(str, sub)) != NULL) {
+        size_t len = strlen(sub);
+        while ((r = strstr(p = r + len, sub)) != NULL) {
+            while (p < r)
+                *q++ = *p++;
+        }
+        while ((*q++ = *p++) != '\0')
+            continue;
+    }
+    return str;
+}
+
+char * w_strndup(const char * str, size_t n) {
+
+    char * str_cpy = NULL;
+    size_t str_len;
+
+    if (str == NULL) {
+        return str_cpy;
+    }
+
+    if (str_len = strlen(str), str_len > n) {
+        str_len = n;
+    }
+
+    os_malloc(str_len + 1, str_cpy);
+    if (str_len > 0) {
+        memcpy(str_cpy, str, str_len);
+    }
+
+    str_cpy[str_len] = '\0';
+
+    return str_cpy;
+}
+
+char ** w_string_split(const char *string_to_split, const char *delim, int max_array_size) {
+    char **paths = NULL;
+    char *state;
+    char *token;
+    int i = 0;
+    char *aux;
+
+    os_calloc(1, sizeof(char *), paths);
+
+    if (!string_to_split || !delim) {
+        return paths;
+    }
+    os_strdup(string_to_split, aux);
+
+    for(token = strtok_r(aux, delim, &state); token; token = strtok_r(NULL, delim, &state)){
+        os_realloc(paths, (i + 2) * sizeof(char *), paths);
+        os_strdup(token, paths[i]);
+        paths[i + 1] = NULL;
+        i++;
+        if (max_array_size && i >= max_array_size) break;
+    }
+    os_free(aux);
+
+    return paths;
+}
+
+// Append two strings
+
+char* w_strcat(char *a, const char *b, size_t n) {
+    if (a == NULL) {
+        return w_strndup(b, n);
+    }
+
+    size_t a_len = strlen(a);
+    size_t output_len = a_len + n;
+
+    os_realloc(a, output_len + 1, a);
+
+    memcpy(a + a_len, b, n);
+    a[output_len] = '\0';
+
+    return a;
+}
+
+// Append a string into the n-th position of a string array
+
+char** w_strarray_append(char **array, char *string, int n) {
+    os_realloc(array, sizeof(char *) * (n + 2), array);
+    array[n] = string;
+    array[n + 1] = NULL;
+
+    return array;
+}
+
+// Tokenize string separated by spaces, respecting double-quotes
+
+char** w_strtok(const char *string) {
+    bool quoting = false;
+    int output_n = 0;
+    char *accum = NULL;
+    char **output;
+
+    os_calloc(1, sizeof(char*), output);
+
+    const char *i;
+    const char *j;
+
+    for (i = string; (j = strpbrk(i, " \"\\")) != NULL; i = j + 1) {
+        switch (*j) {
+        case ' ':
+            if (quoting) {
+                accum = w_strcat(accum, i, j - i + 1);
+            } else {
+                if (j > i) {
+                    accum = w_strcat(accum, i, j - i);
+                }
+
+                if (accum != NULL) {
+                    output = w_strarray_append(output, accum, output_n++);
+                    accum = NULL;
+                }
+            }
+
+            break;
+
+        case '\"':
+            if (j > i || quoting) {
+                accum = w_strcat(accum, i, j - i);
+            }
+
+            quoting = !quoting;
+            break;
+
+        case '\\':
+            if (j > i) {
+                accum = w_strcat(accum, i, j - i);
+            }
+
+            if (j[1] != '\0') {
+                accum = w_strcat(accum, ++j, 1);
+            }
+        }
+    }
+
+    if (*i != '\0') {
+        accum = w_strcat(accum, i, strlen(i));
+    }
+
+    if (accum != NULL) {
+        output = w_strarray_append(output, accum, output_n);
+    }
+
+    return output;
 }

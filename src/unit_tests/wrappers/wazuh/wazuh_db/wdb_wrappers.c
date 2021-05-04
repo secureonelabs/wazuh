@@ -1,4 +1,4 @@
-/* Copyright (C) 2015-2020, Wazuh Inc.
+/* Copyright (C) 2015-2021, Wazuh Inc.
  * All rights reserved.
  *
  * This program is free software; you can redistribute it
@@ -14,6 +14,11 @@
 #include <cmocka.h>
 
 wdb_t* __wrap_wdb_open_global() {
+    return mock_ptr_type(wdb_t*);
+}
+
+wdb_t* __wrap_wdb_open_agent2(int agent_id) {
+    check_expected(agent_id);
     return mock_ptr_type(wdb_t*);
 }
 
@@ -67,6 +72,10 @@ int __wrap_wdb_stmt_cache(__attribute__((unused)) wdb_t wdb,
     return mock();
 }
 
+void expect_wdb_stmt_cache_call(int ret) {
+    will_return(__wrap_wdb_stmt_cache, ret);
+}
+
 int __wrap_wdb_syscheck_load(__attribute__((unused)) wdb_t *wdb,
                              __attribute__((unused)) const char *file,
                              char *output,
@@ -91,27 +100,32 @@ cJSON * __wrap_wdb_exec_stmt(__attribute__((unused)) sqlite3_stmt *stmt) {
     return mock_ptr_type(cJSON *);
 }
 
-int __wrap_wdbc_parse_result(char *result, char **payload) {
-    int retval = mock();
+cJSON * __wrap_wdb_exec_stmt_sized(__attribute__((unused)) sqlite3_stmt *stmt,
+                                   size_t max_size,
+                                   int* status) {
+    check_expected(max_size);
+    *status = mock();
+    return mock_ptr_type(cJSON *);
+}
 
+int __wrap_wdbc_parse_result(char *result, char **payload) {
     check_expected(result);
 
-    if(payload){
-        *payload = strchr(result, ' ');
+    char *ptr = strchr(result, ' ');
+    if (ptr) {
+        *ptr++ = '\0';
+    } else {
+        ptr = result;
+    }
+    if (payload) {
+        *payload = ptr;
     }
 
-    if(*payload) {
-        (*payload)++;
-    }
-    else {
-        *payload = result;
-    }
-
-    return retval;
+    return mock();
 }
 
 int __wrap_wdbc_query_ex(int *sock, const char *query, char *response, const int len) {
-    check_expected(sock);
+    check_expected(*sock);
     check_expected(query);
     check_expected(len);
 
@@ -158,8 +172,27 @@ cJSON* __wrap_wdbc_query_parse_json(__attribute__((unused)) int *sock,
 
     return mock_ptr_type(cJSON *);
 }
-cJSON* __wrap_wdb_exec(__attribute__((unused)) sqlite3 *db, 
-                 const char *sql) {
+
+wdbc_result __wrap_wdbc_query_parse(int *sock,
+                                    const char *query,
+                                    char *response,
+                                    const int len,
+                                    char** payload) {
+    check_expected(sock);
+    check_expected(query);
+    check_expected(len);
+
+    snprintf(response, len, "%s", mock_ptr_type(char*));
+
+    char* ptr = strchr(response, ' ');
+    if (payload) {
+        *payload = ptr ? ptr+1 : NULL;
+    }
+
+    return mock();
+}
+
+cJSON* __wrap_wdb_exec(__attribute__((unused)) sqlite3 *db, const char *sql) {
     check_expected(sql);
     return mock_ptr_type(cJSON*);
 }
@@ -188,4 +221,13 @@ int __wrap_wdb_create_global(const char *path) {
 
 void __wrap_wdb_pool_append(wdb_t * wdb) {
     check_expected(wdb);
+}
+
+sqlite3_stmt* __wrap_wdb_init_stmt_in_cache( __attribute__((unused)) wdb_t* wdb, wdb_stmt statement_index){
+    check_expected(statement_index);
+    return mock_ptr_type(sqlite3_stmt*);
+}
+
+int __wrap_wdb_exec_stmt_silent(__attribute__((unused)) sqlite3_stmt* stmt) {
+    return mock();
 }

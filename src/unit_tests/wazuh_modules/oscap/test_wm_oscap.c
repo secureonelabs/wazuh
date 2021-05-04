@@ -132,9 +132,23 @@ void test_interval_execution(void **state) {
         will_return(__wrap_wm_exec, strdup("TEST_STRING"));
         will_return(__wrap_wm_exec, 0);
         will_return(__wrap_wm_exec, 0);
+
+        expect_value(__wrap_wm_sendmsg, usec, 1000000);
+        expect_value(__wrap_wm_sendmsg, queue, 0);
+        expect_string(__wrap_wm_sendmsg, message, "TEST_STRING");
+        expect_string(__wrap_wm_sendmsg, locmsg, "wodle_open-scap");
+        expect_value(__wrap_wm_sendmsg, loc, LOCALFILE_MQ);
+        will_return(__wrap_wm_sendmsg, 0);
+
+        expect_value(__wrap_wm_sendmsg, usec, 1000000);
+        expect_value(__wrap_wm_sendmsg, queue, 0);
+        expect_string(__wrap_wm_sendmsg, message, "Ending OpenSCAP scan. File: ssg-centos-6-ds.xml. ");
+        expect_string(__wrap_wm_sendmsg, locmsg, "rootcheck");
+        expect_value(__wrap_wm_sendmsg, loc, ROOTCHECK_MQ);
+        will_return(__wrap_wm_sendmsg, 0);
     }
 
-    expect_string(__wrap_StartMQ, path, DEFAULTQPATH);
+    expect_string(__wrap_StartMQ, path, DEFAULTQUEUE);
     expect_value(__wrap_StartMQ, type, WRITE);
     will_return(__wrap_StartMQ, 0);
 

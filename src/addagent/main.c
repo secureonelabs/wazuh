@@ -79,18 +79,14 @@ char shost[512];
 
 int main(int argc, char **argv)
 {
-    char *user_msg;
     int c = 0, cmdlist = 0, json_output = 0;
-#ifndef CLIENT
-    int no_limit = 0;
-#endif
     int force_antiquity;
+    char *user_msg;
     char *end;
     const char *cmdexport = NULL;
     const char *cmdimport = NULL;
     const char *cmdbulk = NULL;
 #ifndef WIN32
-    const char *dir = DEFAULTDIR;
     const char *group = GROUPGLOBAL;
     gid_t gid;
 #else
@@ -99,6 +95,15 @@ int main(int argc, char **argv)
 
     /* Set the name */
     OS_SetName(ARGV0);
+#ifndef WIN32
+    char * home_path = w_homedir(argv[0]);
+    mdebug1(WAZUH_HOMEDIR, home_path);
+
+    /* Change working directory */
+    if (chdir(home_path) == -1) {
+        merror_exit(CHDIR_ERROR, home_path, errno, strerror(errno));
+    }
+#endif
 
     while ((c = getopt(argc, argv, "Vhle:r:i:f:ja:n:F:L")) != -1) {
         switch (c) {
@@ -184,7 +189,7 @@ int main(int argc, char **argv)
                 break;
             case 'L':
 #ifndef CLIENT
-                no_limit = 1;
+                mwarn("This option no longer applies. The agent limit has been removed.");
 #endif
                 break;
             default:
@@ -234,9 +239,11 @@ int main(int argc, char **argv)
     }
 
     /* Chroot to the default directory */
-    if (Privsep_Chroot(dir) < 0) {
-        merror_exit(CHROOT_ERROR, dir, errno, strerror(errno));
+    if (Privsep_Chroot(home_path) < 0) {
+        merror_exit(CHROOT_ERROR, home_path, errno, strerror(errno));
     }
+
+    os_free(home_path);
 
     /* Inside chroot now */
     nowChroot();
@@ -293,7 +300,7 @@ int main(int argc, char **argv)
 #ifdef CLIENT
                 printf("\n ** Agent adding only available on a master ** \n\n");
 #else
-                add_agent(json_output, no_limit);
+                add_agent(json_output);
 #endif
                 break;
             case 'e':

@@ -5,18 +5,17 @@
 import sys
 from datetime import date
 from unittest.mock import patch, MagicMock
+from wazuh.tests.test_agent import send_msg_to_wdb
 
 import pytest
 
 from wazuh.core.exception import WazuhException
 
-with patch('wazuh.common.ossec_uid'):
-    with patch('wazuh.common.ossec_gid'):
+with patch('wazuh.core.common.ossec_uid'):
+    with patch('wazuh.core.common.ossec_gid'):
         sys.modules['wazuh.rbac.orm'] = MagicMock()
-        sys.modules['api'] = MagicMock()
         import wazuh.rbac.decorators
         del sys.modules['wazuh.rbac.orm']
-        del sys.modules['api']
 
         from wazuh.tests.util import RBAC_bypasser
         wazuh.rbac.decorators.expose_resources = RBAC_bypasser
@@ -96,7 +95,7 @@ def test_hourly(effect):
         assert isinstance(response, AffectedItemsWazuhResult), f'The result is not WazuhResult type'
 
 
-@patch('wazuh.common.stats_path', new=test_data_path)
+@patch('wazuh.core.common.stats_path', new=test_data_path)
 def test_hourly_data():
     """Makes sure that data returned by hourly() fit with the expected."""
     response = hourly()
@@ -123,7 +122,7 @@ def test_weekly(effect):
         assert isinstance(response, AffectedItemsWazuhResult), f'The result is not WazuhResult type'
 
 
-@patch('wazuh.common.stats_path', new=test_data_path)
+@patch('wazuh.core.common.stats_path', new=test_data_path)
 def test_weekly_data():
     """Makes sure that data returned by weekly() fit with the expected."""
     response = weekly()
@@ -161,3 +160,30 @@ def test_get_daemons_stats_ko(mock_readfp):
 
             assert isinstance(response, WazuhException), f'The result is not WazuhResult type'
             assert response.code == 1104, f'Response code is not the same'
+
+
+@pytest.mark.parametrize('component', [
+    'logcollector', 'test'
+])
+@patch('wazuh.core.agent.Agent.get_stats')
+@patch('wazuh.stats.get_agents_info', return_value=['000', '001'])
+def test_get_agents_component_stats_json(mock_agents_info, mock_getstats, component):
+    """Test `get_agents_component_stats_json` function from agent module.
+
+    Parameters
+    ----------
+    daemon : string
+        Name of the daemon to get stats from.
+    """
+    response = get_agents_component_stats_json(agent_list=['001'], component=component)
+    assert isinstance(response, AffectedItemsWazuhResult), f'The result is not AffectedItemsWazuhResult type'
+    mock_getstats.assert_called_once_with(component=component)
+
+
+@patch('wazuh.core.agent.Agent.get_stats')
+@patch('wazuh.stats.get_agents_info', return_value=['000', '001'])
+def test_get_agents_component_stats_json_ko(mock_agents_info, mock_getstats):
+    """Test `get_agents_component_stats_json` function from agent module."""
+    response = get_agents_component_stats_json(agent_list=['003'], component='logcollector')
+    assert isinstance(response, AffectedItemsWazuhResult), f'The result is not AffectedItemsWazuhResult type'
+    assert response.render()['data']['failed_items'][0]['error']['code'] == 1701, 'Expected error code was not returned'

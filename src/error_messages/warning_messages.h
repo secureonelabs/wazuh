@@ -35,7 +35,7 @@
 #define FIM_REG_OPEN                            "(6920): Unable to open registry key: '%s' arch: '%s'."
 #define FIM_WARN_FILE_REALTIME                  "(6921): Unable to configure real-time option for file: '%s'"
 #define FIM_PATH_NOT_OPEN                       "(6922): Cannot open '%s': %s"
-#define FIM_WARN_SKIP_EVENT                     "(6923): Unable to process file '%s'"
+
 #define FIM_AUDIT_NORUNNING                     "(6924): Who-data engine cannot start because Auditd is not running."
 #define FIM_INVALID_OPTION_SKIP                 "(6925): Invalid option '%s' for attribute '%s'. The paths '%s' will not be monitored."
 #define FIM_WARN_WHODATA_ADD_RULE               "(6926): Unable to add audit rule for '%s'"
@@ -48,7 +48,19 @@
 #define FIM_WHODATA_RENDER_EVENT                "(6933): Error rendering the event. Error %lu."
 #define FIM_WHODATA_RENDER_PARAM                "(6934): Invalid number of rendered parameters."
 #define FIM_DB_TEMPORARY_FILE_POSITION          "(6935): Unable to reposition temporary file to beginning. Error[%d]: '%s'"
-
+#define FIM_REG_VAL_WRONG_TYPE                  "(6936): Wrong registry value type processed for report_changes."
+#define FIM_INVALID_REG_OPTION_SKIP             "(6937): Invalid option '%s' for attribute '%s'. The registry '%s' not be monitored."
+#define FIM_REGISTRY_EVENT_NULL_ENTRY           "(6938): Invalid null registry event."
+#define FIM_REGISTRY_EVENT_NULL_ENTRY_KEY       "(6939): Invalid registry event with a null key was detected."
+#define FIM_REGISTRY_EVENT_WRONG_ENTRY_TYPE     "(6940): Invalid registry event with a type different than registry was detected."
+#define FIM_REGISTRY_EVENT_WRONG_SAVED_TYPE     "(6941): Invalid registry event with a saved type different than registry was detected."
+#define FIM_REGISTRY_UNSCANNED_KEYS_FAIL        "(6942): Failed to get unscanned registry keys."
+#define FIM_REGISTRY_UNSCANNED_VALUE_FAIL       "(6943): Failed to get unscanned registry values."
+#define FIM_REGISTRY_FAIL_TO_INSERT_VALUE       "(6944): Failed to insert value '%s %s\\%s'"
+#define FIM_REGISTRY_FAIL_TO_GET_KEY_ID         "(6945): Unable to get id for registry key '%s %s'"
+#define FIM_AUDIT_DISABLED                      "(6946): Audit is disabled."
+#define FIM_WARN_FORMAT_PATH                    "(6947): Error formatting path: '%s'"
+#define FIM_DATABASE_NODES_COUNT_FAIL           "(6948): Unable to get the number of entries in database."
 
 /* Monitord warning messages */
 #define ROTATE_LOG_LONG_PATH                    "(7500): The path of the rotated log is too long."
@@ -56,4 +68,37 @@
 #define COMPRESSED_LOG_LONG_PATH                "(7502): The path of the compressed log is too long."
 #define COMPRESSED_JSON_LONG_PATH               "(7503): The path of the compressed json is too long."
 
+/* Wazuh-logtest warning messages*/
+#define LOGTEST_INV_NUM_THREADS                 "(7000): Number of logtest threads too high. Only creates %d threads"
+#define LOGTEST_INV_NUM_USERS                   "(7001): Number of maximum users connected in logtest too high. Only allows %d users"
+#define LOGTEST_INV_NUM_TIMEOUT                 "(7002): Number of maximum user timeouts in logtest too high. Only allows %ds maximum timeouts"
+#define LOGTEST_WARN_TOKEN_EXPIRED              "(7003): '%s' token expires"
+#define LOGTEST_WARN_SESSION_NOT_FOUND          "(7004): No session found for token '%s'"
+
+/* Ruleset reading warnings */
+#define ANALYSISD_INV_VALUE_RULE                "(7600): Invalid value '%s' for attribute '%s' in rule %d"
+#define ANALYSISD_INV_VALUE_DEFAULT             "(7601): Invalid value for attribute '%s' in '%s' option " \
+                                                "(decoder `%s`). Default value will be used"
+#define ANALYSISD_INV_OPT_VALUE_DEFAULT         "(7602): Invalid value '%s' in '%s' option " \
+                                                "(decoder `%s`). Default value will be used"
+#define ANALYSISD_DEC_DEPRECATED_OPT_VALUE      "(7603): Deprecated value '%s' in '%s' option " \
+                                                "(decoder `%s`). Default value will be used"
+
+/* Logcollector */
+#define LOGCOLLECTOR_INV_VALUE_DEFAULT          "(8000): Invalid value '%s' for attribute '%s' in '%s' option. " \
+                                                "Default value will be used."
+#define LOGCOLLECTOR_MULTILINE_SUPPORT          "(8001): log_format '%s' does not support multiline_regex option." \
+                                                " Will be ignored."
+#define LOGCOLLECTOR_MULTILINE_AGE_TIMEOUT      "(8002): 'age' cannot be less than 'timeout' in multiline_regex option."\
+                                                " 'age' will be ignored."
+
+/* Remoted */
+#define REMOTED_NET_PROTOCOL_ERROR              "(9000): Error getting protocol. Default value (%s) will be used."
+#define REMOTED_INV_VALUE_IGNORE                "(9001): Ignored invalid value '%s' for '%s'."
+#define REMOTED_NET_PROTOCOL_ONLY_SECURE        "(9002): Only secure connection supports TCP and UDP at the same time."\
+                                                " Default value (%s) will be used."
+#define REMOTED_INET6_SECURE_CONNNECTION        "(9003): Secure connection does not support IPv6. "\
+                                                "IPv4 will be used instead."
+#define REMOTED_INV_VALUE_DEFAULT               "(9004): Invalid value '%s' in '%s' option. " \
+                                                "Default value will be used."
 #endif /* WARN_MESSAGES_H */

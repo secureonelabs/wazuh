@@ -76,58 +76,18 @@ stages:
     response:
       status_code: 200
       json:
-        error: !anyint
+        error: 0
         data:
-          affected_items:
-            - &ciscat_response
-              agent_id: !anystr
-              benchmark: !anystr
-              error: !anyint
-              fail: !anyint
-              notchecked: !anyint
-              pass: !anyint
-              profile: !anystr
-              scan:
-                id: !anyint
-                time: !anystr
-              score: !anyint
-              unknown: !anyint
-            - <<: *ciscat_response
-            - <<: *ciscat_response
-            - <<: *ciscat_response
-            - <<: *ciscat_response
-            - <<: *ciscat_response
-            - <<: *ciscat_response
-            - <<: *ciscat_response
+          affected_items: []
           failed_items: []
-          total_affected_items: 8
-          total_failed_items: 0
-
-  - name: Request
-    request:
-      verify: False
-      url: "{protocol:s}://{host:s}:{port:d}/experimental/ciscat/results"
-      method: GET
-      headers:
-        Authorization: "Bearer {test_login_token}"
-      params:
-        agents_list: '001,003'
-    response:
-      status_code: 200
-      json:
-        error: !anyint
-        data:
-          affected_items:
-            - <<: *ciscat_response
-              agent_id: '001'
-            - <<: *ciscat_response
-              agent_id: '003'
-          failed_items: []
-          total_affected_items: 2
+          total_affected_items: 0
           total_failed_items: 0
 
 ---
 test_name: GET /experimental/syscollector/hardware
+
+marks:
+  - xfail # https://github.com/wazuh/wazuh-jenkins/issues/2415
 
 stages:
 
@@ -500,7 +460,7 @@ stages:
   - name: Request
     request:
       verify: False
-      url: "{protocol:s}://{host:s}:{port:d}/experimental/syscollector/packages"
+      url: "{protocol:s}://{host:s}:{port:d}/experimental/syscollector/packages?wait_for_complete=true"
       method: GET
       headers:
         Authorization: "Bearer {test_login_token}"
@@ -591,13 +551,17 @@ stages:
             - <<: *ports_response
               agent_id: '001'
             - <<: *ports_response
+              agent_id: '001'
+            - <<: *ports_response
+              agent_id: '003'
+            - <<: *ports_response
               agent_id: '003'
             - <<: *ports_response
               agent_id: '005'
             - <<: *ports_response
               agent_id: '007'
           failed_items: []
-          total_affected_items: 4
+          total_affected_items: 6
           total_failed_items: 0
 
 ---

@@ -4,7 +4,6 @@
 import asyncio
 import logging
 import os
-import subprocess
 import sys
 from unittest.mock import patch, mock_open, MagicMock, call
 
@@ -105,18 +104,17 @@ def test_check_removed_agents(remove_agents_patch, old_ck, new_ck, agents_to_rem
 @patch('os.remove')
 @patch('glob.iglob')
 @patch('wazuh.core.agent.Agent.get_agents_overview')
-@patch('wazuh.core.cluster.worker.Connection')
 @patch('os.path.isdir')
-def test_remove_bulk_agents(isdir_mock, connection_mock, agents_mock, glob_mock, remove_mock, rmtree_mock, wdb_mock,
+def test_remove_bulk_agents(isdir_mock, agents_mock, glob_mock, remove_mock, rmtree_mock, wdb_mock,
                             agents_to_remove):
     """
     Tests WorkerHandler.remove_bulk_agents function.
     """
     agents_mock.return_value = {'totalItems': len(agents_to_remove),
                                 'items': [{'id': a_id, 'ip': '0.0.0.0', 'name': 'test'} for a_id in agents_to_remove]}
-    files_to_remove = [common.ossec_path + '/queue/rootcheck/({name}) {ip}->rootcheck',
-                       common.ossec_path + '/queue/diff/{name}', common.ossec_path + '/queue/agent-groups/{id}',
-                       common.ossec_path + '/queue/rids/{id}', common.ossec_path + '/var/db/agents/{name}-{id}.db',
+    files_to_remove = [common.wazuh_path + '/queue/rootcheck/({name}) {ip}->rootcheck',
+                       common.wazuh_path + '/queue/diff/{name}', common.wazuh_path + '/queue/agent-groups/{id}',
+                       common.wazuh_path + '/queue/rids/{id}', common.wazuh_path + '/var/db/agents/{name}-{id}.db',
                        'global.db']
     glob_mock.side_effect = [[f.format(id=a, ip='0.0.0.0', name='test') for a in agents_to_remove] for f in
                              files_to_remove]
@@ -136,9 +134,16 @@ def test_remove_bulk_agents(isdir_mock, connection_mock, agents_mock, glob_mock,
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 loop = asyncio.new_event_loop()
-current_path_logger = os.path.join(os.path.dirname(__file__), 'testing.log')
-logging.basicConfig(filename=current_path_logger, level=logging.DEBUG)
-logger = logging.getLogger('test')
+logger = None
+
+
+@pytest.fixture(scope='module')
+def create_log(request):
+    current_logger_path = os.path.join(os.path.dirname(__file__), 'testing.log')
+    logging.basicConfig(filename=current_logger_path, level=logging.DEBUG)
+    setattr(request.module, 'logger', logging.getLogger('test'))
+    yield
+    os.path.exists(current_logger_path) and os.remove(current_logger_path)
 
 
 def get_worker_handler():
@@ -166,7 +171,7 @@ def test_ReceiveIntegrityTask():
 
 
 @pytest.mark.asyncio
-async def test_SyncWorker(caplog):
+async def test_SyncWorker(create_log, caplog):
     async def check_message(mock, expected_message):
         with patch('wazuh.core.cluster.common.Handler.send_request', new=AsyncMock(return_value=mock)):
             with caplog.at_level(logging.DEBUG):
@@ -175,7 +180,7 @@ async def test_SyncWorker(caplog):
 
     worker_handler = get_worker_handler()
 
-    sync_worker = worker.SyncWorker(cmd=b'testing', files_to_sync={'files': ['testing']}, checksums={'testing': '0'},
+    sync_worker = worker.SyncWorker(cmd=b'testing', files_to_sync={'files': ['testing']}, files_metadata={'testing': '0'},
                                     logger=logger, worker=worker_handler)
 
     send_request_mock = KeyError(1)

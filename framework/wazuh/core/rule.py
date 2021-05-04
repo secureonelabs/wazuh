@@ -8,11 +8,14 @@ from glob import glob
 
 from wazuh.core import common
 from wazuh.core.exception import WazuhError
-from wazuh.core.utils import load_wazuh_xml
+from wazuh.core.utils import load_wazuh_xml, add_dynamic_detail
 
 REQUIRED_FIELDS = ['id']
 RULE_REQUIREMENTS = ['pci_dss', 'gdpr', 'hipaa', 'nist_800_53', 'gpg13', 'tsc', 'mitre']
 SORT_FIELDS = ['filename', 'relative_dirname', 'description', 'id', 'level', 'status']
+DYNAMIC_OPTIONS = {'regex', 'field', 'match', 'action', 'extra_data', 'hostname', 'id', 'location', 'match',
+                   'program_name', 'protocol', 'user', 'url', 'srcport', 'dstport', 'status', 'system_name',
+                   'extra_data', 'srcgeoip', 'dstgeoip'}
 
 
 class Status(Enum):
@@ -64,7 +67,7 @@ def set_groups(groups, general_groups, rule):
 def load_rules_from_file(rule_filename, rule_relative_path, rule_status):
     try:
         rules = list()
-        root = load_wazuh_xml(os.path.join(common.ossec_path, rule_relative_path, rule_filename))
+        root = load_wazuh_xml(os.path.join(common.wazuh_path, rule_relative_path, rule_filename))
 
         for xml_group in list(root):
             if xml_group.tag.lower() == "group":
@@ -85,6 +88,7 @@ def load_rules_from_file(rule_filename, rule_relative_path, rule_status):
                         for xml_rule_tags in list(xml_rule):
                             tag = xml_rule_tags.tag.lower()
                             value = xml_rule_tags.text
+                            attribs = xml_rule_tags.attrib
                             if value is None:
                                 value = ''
                             if tag == "group":
@@ -94,17 +98,19 @@ def load_rules_from_file(rule_filename, rule_relative_path, rule_status):
                                     groups.append(f'mitre_{mitre_id.text}')
                             elif tag == "description":
                                 rule['description'] += value
-                            elif tag == "field":
-                                add_detail(xml_rule_tags.attrib['name'], value, rule['details'])
                             elif tag in ("list", "info"):
                                 list_detail = {'name': value}
-                                for attrib, attrib_value in xml_rule_tags.attrib.items():
+                                for attrib, attrib_value in attribs.items():
                                     list_detail[attrib] = attrib_value
                                 add_detail(tag, list_detail, rule['details'])
                             # show rule variables
-                            elif tag in {'regex', 'match', 'user', 'id'} and value != '' and value[0] == "$":
-                                for variable in filter(lambda x: x.get('name') == value[1:], root.findall('var')):
-                                    add_detail(tag, variable.text, rule['details'])
+                            elif tag in DYNAMIC_OPTIONS:
+                                if value != '' and value[0] == '$':
+                                    for variable in filter(lambda x: x.get('name') == value[1:], root.findall('var')):
+                                        value = variable.text
+                                if tag == 'field':
+                                    tag = xml_rule_tags.attrib.pop('name')
+                                add_dynamic_detail(tag, value, attribs, rule['details'])
                             else:
                                 add_detail(tag, value, rule['details'])
 
@@ -137,7 +143,7 @@ def _remove_files(tmp_data, parameters):
 def item_format(data, all_items, exclude_filenames):
     for item in glob(all_items):
         item_name = os.path.basename(item)
-        item_dir = os.path.relpath(os.path.dirname(item), start=common.ossec_path)
+        item_dir = os.path.relpath(os.path.dirname(item), start=common.wazuh_path)
         item_status = Status.S_DISABLED.value if item_name in exclude_filenames else Status.S_ENABLED.value
         data.append({'filename': item_name, 'relative_dirname': item_dir, 'status': item_status})
 
@@ -145,7 +151,7 @@ def item_format(data, all_items, exclude_filenames):
 def _create_rule_decoder_dir_dict(ruleset_conf, tag, exclude_filenames, data):
     items = ruleset_conf[tag] if type(ruleset_conf[tag]) is list else [ruleset_conf[tag]]
     for item_dir in items:
-        all_rules = f"{common.ossec_path}/{item_dir}/*.xml"
+        all_rules = f"{common.wazuh_path}/{item_dir}/*.xml"
         item_format(data, all_rules, exclude_filenames)
 
 
@@ -156,7 +162,7 @@ def _create_dict(ruleset_conf, tag, exclude_filenames, data):
     for item in items:
         item_name = os.path.basename(item)
         full_dir = os.path.dirname(item)
-        item_dir = os.path.relpath(full_dir if full_dir else common.ruleset_rules_path, start=common.ossec_path)
+        item_dir = os.path.relpath(full_dir if full_dir else common.ruleset_rules_path, start=common.wazuh_path)
         exclude_filenames.append(item_name) if tag == 'rule_exclude' or tag == 'decoder_exclude' else \
             data.append({'filename': item_name, 'relative_dirname': item_dir, 'status': item_status})
 

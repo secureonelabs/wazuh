@@ -34,7 +34,8 @@ const wm_context WM_AWS_CONTEXT = {
     "aws-s3",
     (wm_routine)wm_aws_main,
     (wm_routine)(void *)wm_aws_destroy,
-    (cJSON * (*)(const void *))wm_aws_dump
+    (cJSON * (*)(const void *))wm_aws_dump,
+    NULL
 };
 
 // Module module main function. It won't return.
@@ -251,7 +252,7 @@ void wm_aws_setup(wm_aws *_aws_config) {
 
     // Connect to socket
 
-    aws_config->queue_fd = StartMQ(DEFAULTQPATH, WRITE, INFINITE_OPENQ_ATTEMPTS);
+    aws_config->queue_fd = StartMQ(DEFAULTQUEUE, WRITE, INFINITE_OPENQ_ATTEMPTS);
 
     if (aws_config->queue_fd < 0) {
         mterror(WM_AWS_LOGTAG, "Can't connect to queue.");
@@ -299,7 +300,16 @@ void wm_aws_run_s3(wm_aws *aws_config, wm_aws_bucket *exec_bucket) {
     // Create arguments
     mtdebug2(WM_AWS_LOGTAG, "Create argument list");
 
-    wm_strcat(&command, WM_AWS_SCRIPT_PATH, '\0');
+    // script path
+    char * script = NULL;
+    os_calloc(PATH_MAX, sizeof(char), script);
+
+    snprintf(script, PATH_MAX, "%s", WM_AWS_SCRIPT_PATH);
+
+    wm_strcat(&command, script, '\0');
+    os_free(script);
+
+    // bucket
     wm_strcat(&command, "--bucket", ' ');
     wm_strcat(&command, exec_bucket->bucket, ' ');
 
@@ -445,10 +455,20 @@ void wm_aws_run_service(wm_aws *aws_config, wm_aws_service *exec_service) {
     // Create arguments
     mtdebug2(WM_AWS_LOGTAG, "Create argument list");
 
-    wm_strcat(&command, WM_AWS_SCRIPT_PATH, '\0');
+    // script path
+    char * script = NULL;
+    os_calloc(PATH_MAX, sizeof(char), script);
+
+    snprintf(script, PATH_MAX, "%s", WM_AWS_SCRIPT_PATH);
+
+    wm_strcat(&command, script, '\0');
+    os_free(script);
+
+    // service
     wm_strcat(&command, "--service", ' ');
     wm_strcat(&command, exec_service->type, ' ');
 
+    // service arguments
     if (exec_service->access_key) {
         wm_strcat(&command, "--access_key", ' ');
         wm_strcat(&command, exec_service->access_key, ' ');

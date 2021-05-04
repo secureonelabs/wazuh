@@ -52,7 +52,8 @@ const wm_context WM_KEY_REQUEST_CONTEXT = {
     KEY_WM_NAME,
     (wm_routine)wm_key_request_main,
     (wm_routine)(void *)wm_key_request_destroy,
-    (cJSON * (*)(const void *))wm_key_request_dump
+    (cJSON * (*)(const void *))wm_key_request_dump,
+    NULL
 };
 
 typedef enum _request_type{
@@ -86,8 +87,8 @@ void * wm_key_request_main(wm_krequest_t * data) {
     /* Init the queue input */
     request_queue = queue_init(data->queue_size);
 
-    if ((sock = StartMQ(WM_KEY_REQUEST_SOCK_PATH, READ, 0)) < 0) {
-        merror(QUEUE_ERROR, WM_KEY_REQUEST_SOCK_PATH, strerror(errno));
+    if ((sock = StartMQ(WM_KEY_REQUEST_SOCK, READ, 0)) < 0) {
+        merror(QUEUE_ERROR, WM_KEY_REQUEST_SOCK, strerror(errno));
         pthread_exit(NULL);
     }
 
@@ -474,7 +475,7 @@ void * w_socket_launcher(void * args) {
 
     mdebug1("Running integration daemon: %s", exec_path);
 
-    if (argv = wm_strtok(exec_path), !argv) {
+    if (argv = w_strtok(exec_path), !argv) {
         merror("Could not split integration command: %s", exec_path);
         pthread_exit(NULL);
     }

@@ -31,7 +31,7 @@ __attribute__((noreturn)) static void help_syscheckd()
     print_out("                to increase the debug level.");
     print_out("    -t          Test configuration");
     print_out("    -f          Run in foreground");
-    print_out("    -c <config> Configuration file to use (default: %s)", DEFAULTCPATH);
+    print_out("    -c <config> Configuration file to use (default: %s)", OSSECCONF);
     print_out(" ");
     exit(1);
 }
@@ -42,16 +42,14 @@ int main(int argc, char **argv)
     int c, r;
     int debug_level = 0;
     int test_config = 0, run_foreground = 0;
-    const char *cfg = DEFAULTCPATH;
+    const char *cfg = OSSECCONF;
     gid_t gid;
     const char *group = GROUPGLOBAL;
-#ifdef ENABLE_AUDIT
-    audit_thread_active = 0;
-    whodata_alerts = 0;
-#endif
 
     /* Set the name */
     OS_SetName(ARGV0);
+
+    char * home_path = w_homedir(argv[0]);
 
     while ((c = getopt(argc, argv, "Vtdhfc:")) != -1) {
         switch (c) {
@@ -83,6 +81,14 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Change current working directory */
+    if (chdir(home_path) == -1) {
+        merror_exit(CHDIR_ERROR, home_path, errno, strerror(errno));
+    }
+
+    mdebug1(WAZUH_HOMEDIR, home_path);
+    os_free(home_path);
+
     /* Check if the group given is valid */
     gid = Privsep_GetGroup(group);
     if (gid == (gid_t) - 1) {
@@ -96,8 +102,6 @@ int main(int argc, char **argv)
 
     /* Read internal options */
     read_internal(debug_level);
-
-    mdebug1(STARTED_MSG);
 
     /* Check if the configuration is present */
     if (File_DateofChange(cfg) < 0) {
@@ -113,7 +117,7 @@ int main(int argc, char **argv)
             if (!test_config) {
                 minfo(FIM_DIRECTORY_NOPROVIDED);
             }
-            dump_syscheck_entry(&syscheck, "", 0, 0, NULL, 0, NULL, NULL, -1);
+            dump_syscheck_file(&syscheck, "", 0, NULL, 0, NULL, NULL, -1);
         } else if (!syscheck.dir[0]) {
             if (!test_config) {
                 minfo(FIM_DIRECTORY_NOPROVIDED);
@@ -153,10 +157,6 @@ int main(int argc, char **argv)
     if (!run_foreground) {
         nowDaemon();
         goDaemon();
-    } else {
-        if (chdir(DEFAULTDIR) == -1) {
-            merror_exit(CHDIR_ERROR, DEFAULTDIR, errno, strerror(errno));
-        }
     }
 
     /* Start signal handling */
@@ -176,8 +176,8 @@ int main(int argc, char **argv)
 
     /* Connect to the queue */
 
-    if ((syscheck.queue = StartMQ(DEFAULTQPATH, WRITE, INFINITE_OPENQ_ATTEMPTS)) < 0) {
-        merror_exit(QUEUE_FATAL, DEFAULTQPATH);
+    if ((syscheck.queue = StartMQ(DEFAULTQUEUE, WRITE, INFINITE_OPENQ_ATTEMPTS)) < 0) {
+        merror_exit(QUEUE_FATAL, DEFAULTQUEUE);
     }
 
     if (!syscheck.disabled) {
@@ -199,8 +199,8 @@ int main(int argc, char **argv)
                 mdebug1(FIM_TAG_ADDED, syscheck.tag[r], syscheck.dir[r]);
 
             // Print diff file size limit
-            if (syscheck.file_size_enabled) {
-                minfo(FIM_DIFF_FILE_SIZE_LIMIT, syscheck.diff_size_limit[r], syscheck.dir[r]);
+            if ((syscheck.opts[r] & CHECK_SEECHANGES) && syscheck.file_size_enabled) {
+                mdebug2(FIM_DIFF_FILE_SIZE_LIMIT, syscheck.diff_size_limit[r], syscheck.dir[r]);
             }
 
             r++;
@@ -212,7 +212,7 @@ int main(int argc, char **argv)
 
         // Print maximum disk quota to be used by the queue/diff/local folder
         if (syscheck.disk_quota_enabled) {
-            minfo(FIM_DISK_QUOTA_LIMIT, syscheck.disk_quota_limit);
+            mdebug2(FIM_DISK_QUOTA_LIMIT, syscheck.disk_quota_limit);
         }
         else {
             minfo(FIM_DISK_QUOTA_LIMIT_DISABLED);
@@ -245,6 +245,8 @@ int main(int argc, char **argv)
                 minfo(FIM_REALTIME_MONITORING_DIRECTORY, syscheck.dir[r]);
 #else
                 mwarn(FIM_WARN_REALTIME_DISABLED, syscheck.dir[r]);
+                syscheck.opts[r] &= ~ REALTIME_ACTIVE;
+                syscheck.opts[r] |= SCHEDULED_ACTIVE;
 #endif
             }
 
@@ -283,6 +285,7 @@ int main(int argc, char **argv)
         pause();
     }
 
+    return (0);
 }
 
 #endif /* !WIN32 */

@@ -11,6 +11,8 @@
 #ifndef VALIDATE_H
 #define VALIDATE_H
 
+#define w_free_os_ip(x) if (x) {os_free(x->ip);os_free(x)}
+
 /* IP structure */
 typedef struct _os_ip {
     char *ip;
@@ -169,6 +171,16 @@ char * w_validate_time(const char * time_str);
  * @return Returns 0 if the interval is multiple, -1 otherwise.
  */
 int w_validate_interval(int interval, int force);
+
+
+/**
+ * @brief Convert to bytes
+ *
+ * @param content string to validate
+ * @return number of bytes on success, otherwise -1
+ */
+long long w_validate_bytes(const char *content);
+
 
 /* Macros */
 

@@ -27,7 +27,7 @@ const char* WDBC_RESULT[] = {
     [WDBC_DUE]     = "due",
     [WDBC_ERROR]   = "err",
     [WDBC_IGNORE]  = "ign",
-    [WDBC_UNKNOWN] = "unk"    
+    [WDBC_UNKNOWN] = "unk"
 };
 
 static const char *SQL_VACUUM = "VACUUM;";
@@ -37,32 +37,41 @@ static const char *SQL_COMMIT = "COMMIT;";
 static const char *SQL_STMT[] = {
     [WDB_STMT_FIM_LOAD] = "SELECT changes, size, perm, uid, gid, md5, sha1, uname, gname, mtime, inode, sha256, date, attributes, symbolic_path FROM fim_entry WHERE file = ?;",
     [WDB_STMT_FIM_FIND_ENTRY] = "SELECT 1 FROM fim_entry WHERE file = ?",
-    [WDB_STMT_FIM_INSERT_ENTRY] = "INSERT INTO fim_entry (file, type, size, perm, uid, gid, md5, sha1, uname, gname, mtime, inode, sha256, attributes, symbolic_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
-    [WDB_STMT_FIM_INSERT_ENTRY2] = "INSERT OR REPLACE INTO fim_entry (file, type, date, size, perm, uid, gid, md5, sha1, uname, gname, mtime, inode, sha256, attributes, symbolic_path, checksum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_FIM_INSERT_ENTRY] = "INSERT INTO fim_entry (file, type, size, perm, uid, gid, md5, sha1, uname, gname, mtime, inode, sha256, attributes, symbolic_path, full_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_FIM_INSERT_ENTRY2] = "INSERT OR REPLACE INTO fim_entry (file, type, date, size, perm, uid, gid, md5, sha1, uname, gname, mtime, inode, sha256, attributes, symbolic_path, checksum, arch, value_name, value_type, full_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
     [WDB_STMT_FIM_UPDATE_ENTRY] = "UPDATE fim_entry SET date = strftime('%s', 'now'), changes = ?, size = ?, perm = ?, uid = ?, gid = ?, md5 = ?, sha1 = ?, uname = ?, gname = ?, mtime = ?, inode = ?, sha256 = ?, attributes = ?, symbolic_path = ? WHERE file = ?;",
-    [WDB_STMT_FIM_DELETE] = "DELETE FROM fim_entry WHERE file = ?;",
+    [WDB_STMT_FIM_DELETE] = "DELETE FROM fim_entry WHERE full_path = ?;",
     [WDB_STMT_FIM_UPDATE_DATE] = "UPDATE fim_entry SET date = strftime('%s', 'now') WHERE file = ?;",
-    [WDB_STMT_FIM_FIND_DATE_ENTRIES] = "SELECT file, changes, size, perm, uid, gid, md5, sha1, uname, gname, mtime, inode, sha256, date, attributes, symbolic_path FROM fim_entry WHERE date < ?;",
+    [WDB_STMT_FIM_FIND_DATE_ENTRIES] = "SELECT full_path, changes, size, perm, uid, gid, md5, sha1, uname, gname, mtime, inode, sha256, date, attributes, symbolic_path FROM fim_entry WHERE date < ?;",
     [WDB_STMT_FIM_GET_ATTRIBUTES] = "SELECT file, attributes from fim_entry WHERE attributes IS NOT '0';",
     [WDB_STMT_FIM_UPDATE_ATTRIBUTES] = "UPDATE fim_entry SET attributes = ? WHERE file = ?;",
-    [WDB_STMT_OSINFO_INSERT] = "INSERT INTO sys_osinfo (scan_id, scan_time, hostname, architecture, os_name, os_version, os_codename, os_major, os_minor, os_build, os_platform, sysname, release, version, os_release) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_OSINFO_INSERT] = "INSERT INTO sys_osinfo (scan_id, scan_time, hostname, architecture, os_name, os_version, os_codename, os_major, os_minor,  os_patch, os_build, os_platform, sysname, release, version, os_release, checksum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_OSINFO_INSERT2] = "INSERT OR REPLACE INTO sys_osinfo (scan_id, scan_time, hostname, architecture, os_name, os_version, os_codename, os_major, os_minor,  os_patch, os_build, os_platform, sysname, release, version, os_release, checksum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
     [WDB_STMT_OSINFO_DEL] = "DELETE FROM sys_osinfo;",
-    [WDB_STMT_PROGRAM_INSERT] = "INSERT INTO sys_programs (scan_id, scan_time, format, name, priority, section, size, vendor, install_time, version, architecture, multiarch, source, description, location, triaged) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_PROGRAM_INSERT] = "INSERT INTO sys_programs (scan_id, scan_time, format, name, priority, section, size, vendor, install_time, version, architecture, multiarch, source, description, location, triaged, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_PROGRAM_INSERT2] = "INSERT OR REPLACE INTO sys_programs (scan_id, scan_time, format, name, priority, section, size, vendor, install_time, version, architecture, multiarch, source, description, location, triaged, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
     [WDB_STMT_PROGRAM_DEL] = "DELETE FROM sys_programs WHERE scan_id != ?;",
     [WDB_STMT_PROGRAM_UPD] = "UPDATE SYS_PROGRAMS SET CPE = ?, MSU_NAME = ?, TRIAGED = ? WHERE SCAN_ID = ? AND FORMAT IS ? AND NAME IS ? AND VENDOR IS ? AND VERSION IS ? AND ARCHITECTURE IS ?;",
     [WDB_STMT_PROGRAM_GET] = "SELECT CPE, MSU_NAME, TRIAGED, FORMAT, NAME, VENDOR, VERSION, ARCHITECTURE FROM SYS_PROGRAMS WHERE SCAN_ID != ?;",
-    [WDB_STMT_HWINFO_INSERT] = "INSERT INTO sys_hwinfo (scan_id, scan_time, board_serial, cpu_name, cpu_cores, cpu_mhz, ram_total, ram_free, ram_usage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-    [WDB_STMT_HOTFIX_INSERT] = "INSERT INTO sys_hotfixes (scan_id, scan_time, hotfix) VALUES (?, ?, ?);",
+    [WDB_STMT_HWINFO_INSERT] = "INSERT INTO sys_hwinfo (scan_id, scan_time, board_serial, cpu_name, cpu_cores, cpu_mhz, ram_total, ram_free, ram_usage, checksum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_HWINFO_INSERT2] = "INSERT OR REPLACE INTO sys_hwinfo (scan_id, scan_time, board_serial, cpu_name, cpu_cores, cpu_mhz, ram_total, ram_free, ram_usage, checksum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_HOTFIX_INSERT] = "INSERT INTO sys_hotfixes (scan_id, scan_time, hotfix, checksum) VALUES (?, ?, ?, ?);",
+    [WDB_STMT_HOTFIX_INSERT2] = "INSERT OR REPLACE INTO sys_hotfixes (scan_id, scan_time, hotfix, checksum) VALUES (?, ?, ?, ?);",
     [WDB_STMT_HWINFO_DEL] = "DELETE FROM sys_hwinfo;",
     [WDB_STMT_HOTFIX_DEL] = "DELETE FROM sys_hotfixes WHERE scan_id != ?;",
     [WDB_STMT_SET_HOTFIX_MET] = "UPDATE vuln_metadata SET HOTFIX_SCAN_ID = ?;",
-    [WDB_STMT_PORT_INSERT] = "INSERT INTO sys_ports (scan_id, scan_time, protocol, local_ip, local_port, remote_ip, remote_port, tx_queue, rx_queue, inode, state, PID, process) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_PORT_INSERT] = "INSERT INTO sys_ports (scan_id, scan_time, protocol, local_ip, local_port, remote_ip, remote_port, tx_queue, rx_queue, inode, state, PID, process, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_PORT_INSERT2] = "INSERT OR REPLACE INTO sys_ports (scan_id, scan_time, protocol, local_ip, local_port, remote_ip, remote_port, tx_queue, rx_queue, inode, state, PID, process, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
     [WDB_STMT_PORT_DEL] = "DELETE FROM sys_ports WHERE scan_id != ?;",
-    [WDB_STMT_PROC_INSERT] = "INSERT INTO sys_processes (scan_id, scan_time, pid, name, state, ppid, utime, stime, cmd, argvs, euser, ruser, suser, egroup, rgroup, sgroup, fgroup, priority, nice, size, vm_size, resident, share, start_time, pgrp, session, nlwp, tgid, tty, processor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [WDB_STMT_PROC_INSERT] = "INSERT INTO sys_processes (scan_id, scan_time, pid, name, state, ppid, utime, stime, cmd, argvs, euser, ruser, suser, egroup, rgroup, sgroup, fgroup, priority, nice, size, vm_size, resident, share, start_time, pgrp, session, nlwp, tgid, tty, processor, checksum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [WDB_STMT_PROC_INSERT2] = "INSERT OR REPLACE INTO sys_processes (scan_id, scan_time, pid, name, state, ppid, utime, stime, cmd, argvs, euser, ruser, suser, egroup, rgroup, sgroup, fgroup, priority, nice, size, vm_size, resident, share, start_time, pgrp, session, nlwp, tgid, tty, processor, checksum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [WDB_STMT_PROC_DEL] = "DELETE FROM sys_processes WHERE scan_id != ?;",
-    [WDB_STMT_NETINFO_INSERT] = "INSERT INTO sys_netiface (scan_id, scan_time, name, adapter, type, state, mtu, mac, tx_packets, rx_packets, tx_bytes, rx_bytes, tx_errors, rx_errors, tx_dropped, rx_dropped) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
-    [WDB_STMT_PROTO_INSERT] = "INSERT INTO sys_netproto (scan_id, iface, type, gateway, dhcp, metric) VALUES (?, ?, ?, ?, ?, ?);",
-    [WDB_STMT_ADDR_INSERT] = "INSERT INTO sys_netaddr (scan_id, iface, proto, address, netmask, broadcast) VALUES (?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_NETINFO_INSERT] = "INSERT INTO sys_netiface (scan_id, scan_time, name, adapter, type, state, mtu, mac, tx_packets, rx_packets, tx_bytes, rx_bytes, tx_errors, rx_errors, tx_dropped, rx_dropped, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_NETINFO_INSERT2] = "INSERT OR REPLACE INTO sys_netiface (scan_id, scan_time, name, adapter, type, state, mtu, mac, tx_packets, rx_packets, tx_bytes, rx_bytes, tx_errors, rx_errors, tx_dropped, rx_dropped, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_PROTO_INSERT] = "INSERT INTO sys_netproto (scan_id, iface, type, gateway, dhcp, metric, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_PROTO_INSERT2] = "INSERT OR REPLACE INTO sys_netproto (scan_id, iface, type, gateway, dhcp, metric, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_ADDR_INSERT] = "INSERT INTO sys_netaddr (scan_id, iface, proto, address, netmask, broadcast, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+    [WDB_STMT_ADDR_INSERT2] = "INSERT OR REPLACE INTO sys_netaddr (scan_id, iface, proto, address, netmask, broadcast, checksum, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
     [WDB_STMT_NETINFO_DEL] = "DELETE FROM sys_netiface WHERE scan_id != ?;",
     [WDB_STMT_PROTO_DEL] = "DELETE FROM sys_netproto WHERE scan_id != ?;",
     [WDB_STMT_ADDR_DEL] = "DELETE FROM sys_netaddr WHERE scan_id != ?;",
@@ -110,24 +119,30 @@ static const char *SQL_STMT[] = {
     [WDB_STMT_SYNC_UPDATE_ATTEMPT] = "UPDATE sync_info SET last_attempt = ?, n_attempts = n_attempts + 1 WHERE component = ?;",
     [WDB_STMT_SYNC_UPDATE_COMPLETION] = "UPDATE sync_info SET last_attempt = ?, last_completion = ?, n_attempts = n_attempts + 1, n_completions = n_completions + 1 WHERE component = ?;",
     [WDB_STMT_MITRE_NAME_GET] = "SELECT name FROM attack WHERE id = ?;",
+    [WDB_STMT_FIM_FILE_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM fim_entry WHERE file BETWEEN ? and ? and type='file' ORDER BY file;",
+    [WDB_STMT_FIM_FILE_CLEAR] = "DELETE FROM fim_entry WHERE type='file';",
+    [WDB_STMT_FIM_FILE_DELETE_AROUND] = "DELETE FROM fim_entry WHERE (file < ? OR file > ?) AND type = 'file';",
+    [WDB_STMT_FIM_FILE_DELETE_RANGE] = "DELETE FROM fim_entry WHERE (file > ? AND file < ?) AND type = 'file';",
+    [WDB_STMT_FIM_REGISTRY_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM fim_entry WHERE (type='registry_key' OR type='registry_value') AND full_path BETWEEN ? AND ? ORDER BY full_path",
+    [WDB_STMT_FIM_REGISTRY_CLEAR] = "DELETE FROM fim_entry WHERE type='registry_key' OR type='registry_value';",
+    [WDB_STMT_FIM_REGISTRY_DELETE_AROUND] = "DELETE FROM fim_entry WHERE (type='registry_key' OR type='registry_value') AND (full_path < ? OR full_path > ?);",
+    [WDB_STMT_FIM_REGISTRY_DELETE_RANGE] = "DELETE FROM fim_entry WHERE (type='registry_key' OR type='registry_value') AND (full_path > ? AND full_path < ?);",
+    [WDB_STMT_ROOTCHECK_INSERT_PM] = "INSERT INTO pm_event (date_first, date_last, log, pci_dss, cis) VALUES (?, ?, ?, ?, ?);",
+    [WDB_STMT_ROOTCHECK_UPDATE_PM] = "UPDATE pm_event SET date_last = ? WHERE log = ?;",
+    [WDB_STMT_ROOTCHECK_DELETE_PM] = "DELETE FROM pm_event;",
     [WDB_STMT_GLOBAL_INSERT_AGENT] = "INSERT INTO agent (id, name, ip, register_ip, internal_key, date_add, `group`) VALUES (?,?,?,?,?,?,?);",
     [WDB_STMT_GLOBAL_UPDATE_AGENT_NAME] = "UPDATE agent SET name = ? WHERE id = ?;",
-    [WDB_STMT_GLOBAL_UPDATE_AGENT_VERSION] = "UPDATE agent SET os_name = ?, os_version = ?, os_major = ?, os_minor = ?, os_codename = ?, os_platform = ?, os_build = ?, os_uname = ?, os_arch = ?, version = ?, config_sum = ?, merged_sum = ?, manager_host = ?, node_name = ?, last_keepalive = (CASE WHEN id = 0 THEN 253402300799 ELSE STRFTIME('%s', 'NOW') END), sync_status = ? WHERE id = ?;",
-    [WDB_STMT_GLOBAL_UPDATE_AGENT_VERSION_IP] = "UPDATE agent SET os_name = ?, os_version = ?, os_major = ?, os_minor = ?, os_codename = ?, os_platform = ?, os_build = ?, os_uname = ?, os_arch = ?, version = ?, config_sum = ?, merged_sum = ?, manager_host = ?, node_name = ?, last_keepalive = (CASE WHEN id = 0 THEN 253402300799 ELSE STRFTIME('%s', 'NOW') END), ip = ?, sync_status = ? WHERE id = ?;",
+    [WDB_STMT_GLOBAL_UPDATE_AGENT_VERSION] = "UPDATE agent SET os_name = ?, os_version = ?, os_major = ?, os_minor = ?, os_codename = ?, os_platform = ?, os_build = ?, os_uname = ?, os_arch = ?, version = ?, config_sum = ?, merged_sum = ?, manager_host = ?, node_name = ?, last_keepalive = (CASE WHEN id = 0 THEN 253402300799 ELSE STRFTIME('%s', 'NOW') END), connection_status = ?, sync_status = ? WHERE id = ?;",
+    [WDB_STMT_GLOBAL_UPDATE_AGENT_VERSION_IP] = "UPDATE agent SET os_name = ?, os_version = ?, os_major = ?, os_minor = ?, os_codename = ?, os_platform = ?, os_build = ?, os_uname = ?, os_arch = ?, version = ?, config_sum = ?, merged_sum = ?, manager_host = ?, node_name = ?, last_keepalive = (CASE WHEN id = 0 THEN 253402300799 ELSE STRFTIME('%s', 'NOW') END), ip = ?, connection_status = ?, sync_status = ? WHERE id = ?;",
     [WDB_STMT_GLOBAL_LABELS_GET] = "SELECT * FROM labels WHERE id = ?;",
     [WDB_STMT_GLOBAL_LABELS_DEL] = "DELETE FROM labels WHERE id = ?;",
     [WDB_STMT_GLOBAL_LABELS_SET] = "INSERT INTO labels (id, key, value) VALUES (?,?,?);",
-    [WDB_STMT_GLOBAL_UPDATE_AGENT_KEEPALIVE] = "UPDATE agent SET last_keepalive = CASE WHEN last_keepalive IS NULL THEN 0 ELSE STRFTIME('%s', 'NOW') END, sync_status = ? WHERE id = ?;",
+    [WDB_STMT_GLOBAL_UPDATE_AGENT_KEEPALIVE] = "UPDATE agent SET last_keepalive = STRFTIME('%s', 'NOW'), connection_status = ?, sync_status = ? WHERE id = ?;",
+    [WDB_STMT_GLOBAL_UPDATE_AGENT_CONNECTION_STATUS] = "UPDATE agent SET connection_status = ?, sync_status = ? WHERE id = ?;",
     [WDB_STMT_GLOBAL_DELETE_AGENT] = "DELETE FROM agent WHERE id = ?;",
     [WDB_STMT_GLOBAL_SELECT_AGENT_NAME] = "SELECT name FROM agent WHERE id = ?;",
     [WDB_STMT_GLOBAL_SELECT_AGENT_GROUP] = "SELECT `group` FROM agent WHERE id = ?;",
     [WDB_STMT_GLOBAL_FIND_AGENT] = "SELECT id FROM agent WHERE name = ? AND (register_ip = ? OR register_ip LIKE ? || '/_%');",
-    [WDB_STMT_GLOBAL_SELECT_FIM_OFFSET] = "SELECT fim_offset FROM agent WHERE id = ?;",
-    [WDB_STMT_GLOBAL_SELECT_REG_OFFSET] = "SELECT reg_offset FROM agent WHERE id = ?;",
-    [WDB_STMT_GLOBAL_UPDATE_FIM_OFFSET] = "UPDATE agent SET fim_offset = ? WHERE id = ?;",
-    [WDB_STMT_GLOBAL_UPDATE_REG_OFFSET] = "UPDATE agent SET reg_offset = ? WHERE id = ?;",
-    [WDB_STMT_GLOBAL_SELECT_AGENT_STATUS] = "SELECT status FROM agent WHERE id = ?;",
-    [WDB_STMT_GLOBAL_UPDATE_AGENT_STATUS] = "UPDATE agent SET status = ? WHERE id = ?;",
     [WDB_STMT_GLOBAL_FIND_GROUP] = "SELECT id FROM `group` WHERE name = ?;",
     [WDB_STMT_GLOBAL_UPDATE_AGENT_GROUP] = "UPDATE agent SET `group` = ? WHERE id = ?;",
     [WDB_STMT_GLOBAL_INSERT_AGENT_GROUP] = "INSERT INTO `group` (name) VALUES(?);",
@@ -137,15 +152,61 @@ static const char *SQL_STMT[] = {
     [WDB_STMT_GLOBAL_DELETE_GROUP] = "DELETE FROM `group` WHERE name = ?;",
     [WDB_STMT_GLOBAL_SELECT_GROUPS] = "SELECT name FROM `group`;",
     [WDB_STMT_GLOBAL_SELECT_AGENT_KEEPALIVE] = "SELECT last_keepalive FROM agent WHERE name = ? AND (register_ip = ? OR register_ip LIKE ? || '/_%');",
-    [WDB_STMT_GLOBAL_SYNC_REQ_GET] = "SELECT id, name, ip, os_name, os_version, os_major, os_minor, os_codename, os_build, os_platform, os_uname, os_arch, version, config_sum, merged_sum, manager_host, node_name, last_keepalive FROM agent WHERE id > ? AND sync_status = 'syncreq' LIMIT 1;", 
+    [WDB_STMT_GLOBAL_SYNC_REQ_GET] = "SELECT id, name, ip, os_name, os_version, os_major, os_minor, os_codename, os_build, os_platform, os_uname, os_arch, version, config_sum, merged_sum, manager_host, node_name, last_keepalive, connection_status FROM agent WHERE id > ? AND sync_status = 'syncreq' LIMIT 1;",
     [WDB_STMT_GLOBAL_SYNC_SET] = "UPDATE agent SET sync_status = ? WHERE id = ?;",
-    [WDB_STMT_GLOBAL_UPDATE_AGENT_INFO] = "UPDATE agent SET config_sum = :config_sum, ip = :ip, manager_host = :manager_host, merged_sum = :merged_sum, name = :name, node_name = :node_name, os_arch = :os_arch, os_build = :os_build, os_codename = :os_codename, os_major = :os_major, os_minor = :os_minor, os_name = :os_name, os_platform = :os_platform, os_uname = :os_uname, os_version = :os_version, version = :version, last_keepalive = :last_keepalive, sync_status = :sync_status WHERE id = :id;",
-    [WDB_STMT_GLOBAL_GET_AGENTS] = "SELECT id FROM agent WHERE id > ? LIMIT 1;", 
-    [WDB_STMT_GLOBAL_GET_AGENTS_BY_GREATER_KEEPALIVE] = "SELECT id FROM agent WHERE id > ? AND last_keepalive > ? LIMIT 1;", 
-    [WDB_STMT_GLOBAL_GET_AGENTS_BY_LESS_KEEPALIVE] = "SELECT id FROM agent WHERE id > ? AND last_keepalive < ? LIMIT 1;", 
+    [WDB_STMT_GLOBAL_UPDATE_AGENT_INFO] = "UPDATE agent SET config_sum = :config_sum, ip = :ip, manager_host = :manager_host, merged_sum = :merged_sum, name = :name, node_name = :node_name, os_arch = :os_arch, os_build = :os_build, os_codename = :os_codename, os_major = :os_major, os_minor = :os_minor, os_name = :os_name, os_platform = :os_platform, os_uname = :os_uname, os_version = :os_version, version = :version, last_keepalive = :last_keepalive, connection_status = :connection_status, sync_status = :sync_status WHERE id = :id;",
+    [WDB_STMT_GLOBAL_GET_AGENTS] = "SELECT id FROM agent WHERE id > ?;",
+    [WDB_STMT_GLOBAL_GET_AGENTS_BY_CONNECTION_STATUS] = "SELECT id FROM agent WHERE id > ? AND connection_status = ?;",
     [WDB_STMT_GLOBAL_GET_AGENT_INFO] = "SELECT * FROM agent WHERE id = ?;",
-    [WDB_STMT_GLOBAL_CHECK_MANAGER_KEEPALIVE] = "SELECT COUNT(*) FROM agent WHERE id=0 AND last_keepalive=253402300799;",
+    [WDB_STMT_GLOBAL_RESET_CONNECTION_STATUS] = "UPDATE agent SET connection_status = 'disconnected', sync_status = ? where connection_status != 'disconnected' AND connection_status != 'never_connected' AND id != 0;",
+    [WDB_STMT_GLOBAL_GET_AGENTS_TO_DISCONNECT] = "SELECT id FROM agent WHERE id > ? AND connection_status = 'active' AND last_keepalive < ?;",
+    [WDB_STMT_TASK_INSERT_TASK] = "INSERT INTO TASKS VALUES(NULL,?,?,?,?,?,?,?,?);",
+    [WDB_STMT_TASK_GET_LAST_AGENT_TASK] = "SELECT *, MAX(CREATE_TIME) FROM TASKS WHERE AGENT_ID = ?;",
+    [WDB_STMT_TASK_GET_LAST_AGENT_UPGRADE_TASK] = "SELECT *, MAX(CREATE_TIME) FROM TASKS WHERE AGENT_ID = ? AND (COMMAND = 'upgrade' OR COMMAND = 'upgrade_custom');",
+    [WDB_STMT_TASK_UPDATE_TASK_STATUS] = "UPDATE TASKS SET STATUS = ?, LAST_UPDATE_TIME = ?, ERROR_MESSAGE = ? WHERE TASK_ID = ?;",
+    [WDB_STMT_TASK_GET_TASK_BY_STATUS] = "SELECT * FROM TASKS WHERE STATUS = ?;",
+    [WDB_STMT_TASK_DELETE_OLD_TASKS] = "DELETE FROM TASKS WHERE CREATE_TIME <= ?;",
+    [WDB_STMT_TASK_DELETE_TASK] = "DELETE FROM TASKS WHERE TASK_ID = ?;",
+    [WDB_STMT_TASK_CANCEL_PENDING_UPGRADE_TASKS] = "UPDATE TASKS SET STATUS = '" WM_TASK_STATUS_CANCELLED "', LAST_UPDATE_TIME = ? WHERE NODE = ? AND STATUS = '" WM_TASK_STATUS_PENDING "' AND (COMMAND = 'upgrade' OR COMMAND = 'upgrade_custom');",
     [WDB_STMT_PRAGMA_JOURNAL_WAL] = "PRAGMA journal_mode=WAL;",
+    [WDB_STMT_SYSCOLLECTOR_PROCESSES_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_processes WHERE pid BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY pid;",
+    [WDB_STMT_SYSCOLLECTOR_PROCESSES_DELETE_AROUND] = "DELETE FROM sys_processes WHERE pid < ? OR pid > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_PROCESSES_DELETE_RANGE] = "DELETE FROM sys_processes WHERE pid > ? AND pid < ?;",
+    [WDB_STMT_SYSCOLLECTOR_PROCESSES_CLEAR] = "DELETE FROM sys_processes;",
+    [WDB_STMT_SYSCOLLECTOR_PACKAGES_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_programs WHERE item_id BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY item_id;",
+    [WDB_STMT_SYSCOLLECTOR_PACKAGES_DELETE_AROUND] = "DELETE FROM sys_programs WHERE item_id < ? OR item_id > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_PACKAGES_DELETE_RANGE] = "DELETE FROM sys_programs WHERE item_id > ? AND item_id < ?;",
+    [WDB_STMT_SYSCOLLECTOR_PACKAGES_CLEAR] = "DELETE FROM sys_programs;",
+    [WDB_STMT_SYSCOLLECTOR_HOTFIXES_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_hotfixes WHERE hotfix BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY hotfix;",
+    [WDB_STMT_SYSCOLLECTOR_HOTFIXES_DELETE_AROUND] = "DELETE FROM sys_hotfixes WHERE hotfix < ? OR hotfix > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_HOTFIXES_DELETE_RANGE] = "DELETE FROM sys_hotfixes WHERE hotfix > ? AND hotfix < ?;",
+    [WDB_STMT_SYSCOLLECTOR_HOTFIXES_CLEAR] = "DELETE FROM sys_hotfixes;",
+    [WDB_STMT_SYSCOLLECTOR_PORTS_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_ports WHERE item_id BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY item_id ;",
+    [WDB_STMT_SYSCOLLECTOR_PORTS_DELETE_AROUND] = "DELETE FROM sys_ports WHERE item_id < ? OR item_id > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_PORTS_DELETE_RANGE] = "DELETE FROM sys_ports WHERE item_id > ? AND item_id < ?;",
+    [WDB_STMT_SYSCOLLECTOR_PORTS_CLEAR] = "DELETE FROM sys_ports;",
+    [WDB_STMT_SYSCOLLECTOR_NETPROTO_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_netproto WHERE item_id BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY item_id ;",
+    [WDB_STMT_SYSCOLLECTOR_NETPROTO_DELETE_AROUND] = "DELETE FROM sys_netproto WHERE item_id < ? OR item_id > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_NETPROTO_DELETE_RANGE] = "DELETE FROM sys_netproto WHERE item_id > ? AND item_id < ?;",
+    [WDB_STMT_SYSCOLLECTOR_NETPROTO_CLEAR] = "DELETE FROM sys_netproto;",
+    [WDB_STMT_SYSCOLLECTOR_NETADDRESS_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_netaddr WHERE item_id BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY item_id;",
+    [WDB_STMT_SYSCOLLECTOR_NETADDRESS_DELETE_AROUND] = "DELETE FROM sys_netaddr WHERE item_id < ? OR item_id > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_NETADDRESS_DELETE_RANGE] = "DELETE FROM sys_netaddr WHERE item_id > ? AND item_id < ?;",
+    [WDB_STMT_SYSCOLLECTOR_NETADDRESS_CLEAR] = "DELETE FROM sys_netaddr;",
+    [WDB_STMT_SYSCOLLECTOR_NETINFO_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_netiface WHERE item_id BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY item_id;",
+    [WDB_STMT_SYSCOLLECTOR_NETINFO_DELETE_AROUND] = "DELETE FROM sys_netiface WHERE item_id < ? OR item_id > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_NETINFO_DELETE_RANGE] = "DELETE FROM sys_netiface WHERE item_id > ? AND item_id < ?;",
+    [WDB_STMT_SYSCOLLECTOR_NETINFO_CLEAR] = "DELETE FROM sys_netiface;",
+    [WDB_STMT_SYSCOLLECTOR_HWINFO_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_hwinfo WHERE board_serial BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY board_serial;",
+    [WDB_STMT_SYSCOLLECTOR_HWINFO_DELETE_AROUND] = "DELETE FROM sys_hwinfo WHERE board_serial < ? OR board_serial > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_HWINFO_DELETE_RANGE] = "DELETE FROM sys_hwinfo WHERE board_serial > ? AND board_serial < ?;",
+    [WDB_STMT_SYSCOLLECTOR_HWINFO_CLEAR] = "DELETE FROM sys_hwinfo;",
+    [WDB_STMT_SYSCOLLECTOR_OSINFO_SELECT_CHECKSUM_RANGE] = "SELECT checksum FROM sys_osinfo WHERE os_name BETWEEN ? and ? AND checksum != 'legacy' AND checksum != '' ORDER BY os_name;",
+    [WDB_STMT_SYSCOLLECTOR_OSINFO_DELETE_AROUND] = "DELETE FROM sys_osinfo WHERE os_name < ? OR os_name > ? OR checksum = 'legacy' OR checksum = '';",
+    [WDB_STMT_SYSCOLLECTOR_OSINFO_DELETE_RANGE] = "DELETE FROM sys_osinfo WHERE os_name > ? AND os_name < ?;",
+    [WDB_STMT_SYSCOLLECTOR_OSINFO_CLEAR] = "DELETE FROM sys_osinfo;",
+    [WDB_STMT_VULN_CVE_INSERT] = "INSERT OR IGNORE INTO vuln_cves (name, version, architecture, cve) VALUES(?,?,?,?);",
+    [WDB_STMT_VULN_CVE_CLEAR] = "DELETE FROM vuln_cves;"
 };
 
 wdb_config wconfig;
@@ -166,14 +227,14 @@ wdb_t * wdb_open_global() {
     // Finds DB in pool
     if (wdb = (wdb_t *)OSHash_Get(open_dbs, WDB_GLOB_NAME), wdb) {
         // The corresponding w_mutex_unlock(&wdb->mutex) is called in wdb_leave(wdb_t * wdb)
-        w_mutex_lock(&wdb->mutex); 
+        w_mutex_lock(&wdb->mutex);
         wdb->refcount++;
         w_mutex_unlock(&pool_mutex);
         return wdb;
     } else {
         // Try to open DB
         snprintf(path, sizeof(path), "%s/%s.db", WDB2_DIR, WDB_GLOB_NAME);
-        
+
         if (sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE, NULL)) {
             mdebug1("Global database not found, creating.");
             sqlite3_close_v2(db);
@@ -205,7 +266,7 @@ wdb_t * wdb_open_global() {
     }
 
     // The corresponding w_mutex_unlock(&wdb->mutex) is called in wdb_leave(wdb_t * wdb)
-    w_mutex_lock(&wdb->mutex); 
+    w_mutex_lock(&wdb->mutex);
     wdb->refcount++;
 
     w_mutex_unlock(&pool_mutex);
@@ -253,7 +314,7 @@ sqlite3* wdb_open_agent(int id_agent, const char *name) {
     char dir[OS_FLSIZE + 1];
     sqlite3 *db;
 
-    snprintf(dir, OS_FLSIZE, "%s%s/agents/%03d-%s.db", isChroot() ? "/" : "", WDB_DIR, id_agent, name);
+    snprintf(dir, OS_FLSIZE, "%s/agents/%03d-%s.db", WDB_DIR, id_agent, name);
 
     if (sqlite3_open_v2(dir, &db, SQLITE_OPEN_READWRITE, NULL)) {
         mdebug1("No SQLite database found for agent '%s', creating.", name);
@@ -339,6 +400,60 @@ success:
     wdb->refcount++;
 
 end:
+    w_mutex_unlock(&pool_mutex);
+    return wdb;
+}
+
+// Opens tasks database and stores it in DB pool. It returns a locked database or NULL
+wdb_t * wdb_open_tasks() {
+    char path[PATH_MAX + 1] = "";
+    sqlite3 *db = NULL;
+    wdb_t * wdb = NULL;
+
+    w_mutex_lock(&pool_mutex);
+
+    // Finds DB in pool
+    if (wdb = (wdb_t *)OSHash_Get(open_dbs, WDB_TASK_NAME), wdb) {
+        // The corresponding w_mutex_unlock(&wdb->mutex) is called in wdb_leave(wdb_t * wdb)
+        w_mutex_lock(&wdb->mutex);
+        wdb->refcount++;
+        w_mutex_unlock(&pool_mutex);
+        return wdb;
+    } else {
+        // Try to open DB
+        snprintf(path, sizeof(path), "%s/%s.db", WDB_TASK_DIR, WDB_TASK_NAME);
+
+        if (sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE, NULL)) {
+            mdebug1("Tasks database not found, creating.");
+            sqlite3_close_v2(db);
+
+            // Creating database
+            if (OS_SUCCESS != wdb_create_file(path, schema_task_manager_sql)) {
+                merror("Couldn't create SQLite database '%s'", path);
+                w_mutex_unlock(&pool_mutex);
+                return wdb;
+            }
+
+            // Retry to open
+            if (sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE, NULL)) {
+                merror("Can't open SQLite database '%s': %s", path, sqlite3_errmsg(db));
+                sqlite3_close_v2(db);
+                w_mutex_unlock(&pool_mutex);
+                return wdb;
+            }
+
+            wdb = wdb_init(db, WDB_TASK_NAME);
+            wdb_pool_append(wdb);
+        }
+        else {
+            wdb = wdb_init(db, WDB_TASK_NAME);
+            wdb_pool_append(wdb);
+        }
+    }
+
+    // The corresponding w_mutex_unlock(&wdb->mutex) is called in wdb_leave(wdb_t * wdb)
+    w_mutex_lock(&wdb->mutex);
+    wdb->refcount++;
     w_mutex_unlock(&pool_mutex);
     return wdb;
 }
@@ -532,12 +647,7 @@ int wdb_commit2(wdb_t * wdb) {
 
 /* Create global database */
 int wdb_create_global(const char *path) {
-    char max_agents[16];
-    snprintf(max_agents, 15, "%d", MAX_AGENTS);
-
     if (OS_SUCCESS != wdb_create_file(path, schema_global_sql))
-        return OS_INVALID;
-    else if (OS_SUCCESS != wdb_insert_info("max_agents", max_agents))
         return OS_INVALID;
     else if (OS_SUCCESS != wdb_insert_info("openssl_support", "yes"))
         return OS_INVALID;
@@ -620,7 +730,7 @@ int wdb_create_file(const char *path, const char *source) {
         break;
     }
 
-    if (chmod(path, 0660) < 0) {
+    if (chmod(path, 0640) < 0) {
         merror(CHMOD_ERROR, path, errno, strerror(errno));
         return OS_INVALID;
     }
@@ -736,6 +846,25 @@ void wdb_pool_remove(wdb_t * wdb) {
     }
 }
 
+// Duplicate the database pool
+wdb_t * wdb_pool_copy() {
+    wdb_t *copy = NULL;
+    wdb_t *last;
+
+    for (wdb_t *i = db_pool_begin; i != NULL; i = i->next) {
+        wdb_t * t = wdb_init(NULL, i->id);
+
+        if (copy == NULL) {
+            copy = last = t;
+        } else {
+            last->next = t;
+            last = t;
+        }
+    }
+
+    return copy;
+}
+
 void wdb_close_all() {
     wdb_t * node;
 
@@ -756,10 +885,23 @@ void wdb_close_all() {
 
 void wdb_commit_old() {
     wdb_t * node;
+    wdb_t * next;
 
     w_mutex_lock(&pool_mutex);
+    wdb_t *copy = wdb_pool_copy();
+    w_mutex_unlock(&pool_mutex);
 
-    for (node = db_pool_begin; node; node = node->next) {
+    for (wdb_t *i = copy; i != NULL; wdb_destroy(i), i = next) {
+        next = i->next;
+
+        w_mutex_lock(&pool_mutex);
+        node = (wdb_t *)OSHash_Get(open_dbs, i->id);
+
+        if (node == NULL) {
+            w_mutex_unlock(&pool_mutex);
+            continue;
+        }
+
         w_mutex_lock(&node->mutex);
         time_t cur_time = time(NULL);
 
@@ -776,9 +918,8 @@ void wdb_commit_old() {
         }
 
         w_mutex_unlock(&node->mutex);
+        w_mutex_unlock(&pool_mutex);
     }
-
-    w_mutex_unlock(&pool_mutex);
 }
 
 void wdb_close_old() {
@@ -786,23 +927,121 @@ void wdb_close_old() {
     wdb_t * next;
 
     w_mutex_lock(&pool_mutex);
+    wdb_t *copy = wdb_pool_copy();
+    w_mutex_unlock(&pool_mutex);
 
-    for (node = db_pool_begin; node && db_pool_size > wconfig.open_db_limit; node = next) {
-        next = node->next;
+    for (wdb_t *i = copy; i != NULL; wdb_destroy(i), i = next) {
+        next = i->next;
+
+        w_mutex_lock(&pool_mutex);
+        node = (wdb_t *)OSHash_Get(open_dbs, i->id);
+
+        if (node == NULL || db_pool_size <= wconfig.open_db_limit) {
+            w_mutex_unlock(&pool_mutex);
+            continue;
+        }
+
+        w_mutex_lock(&node->mutex);
 
         if (node->refcount == 0 && !node->transaction) {
+            w_mutex_unlock(&node->mutex);
             mdebug2("Closing database for agent %s", node->id);
             wdb_close(node, FALSE);
+        } else {
+            w_mutex_unlock(&node->mutex);
+        }
+
+        w_mutex_unlock(&pool_mutex);
+    }
+}
+
+int wdb_exec_stmt_silent(sqlite3_stmt* stmt) {
+    switch (wdb_step(stmt)) {
+    case SQLITE_ROW:
+    case SQLITE_DONE:
+        return OS_SUCCESS;
+        break;
+    default:
+        mdebug1("SQL statement execution failed");
+        return OS_INVALID;
+    }
+}
+
+cJSON* wdb_exec_row_stmt(sqlite3_stmt * stmt, int* status) {
+    cJSON* result = NULL;
+
+    int _status = sqlite3_step(stmt);
+    if (SQLITE_ROW == _status) {
+        int count = sqlite3_column_count(stmt);
+        if (count > 0) {
+            result = cJSON_CreateObject();
+
+            for (int i = 0; i < count; i++) {
+                switch (sqlite3_column_type(stmt, i)) {
+                case SQLITE_INTEGER:
+                case SQLITE_FLOAT:
+                    cJSON_AddNumberToObject(result, sqlite3_column_name(stmt, i), sqlite3_column_double(stmt, i));
+                    break;
+
+                case SQLITE_TEXT:
+                case SQLITE_BLOB:
+                    cJSON_AddStringToObject(result, sqlite3_column_name(stmt, i), (const char *)sqlite3_column_text(stmt, i));
+                    break;
+
+                case SQLITE_NULL:
+                default:
+                    ;
+                }
+            }
         }
     }
+    else if (SQLITE_DONE != _status) {
+        mdebug1("SQL statement execution failed");
+    }
 
-    w_mutex_unlock(&pool_mutex);
+    if (status) {
+        *status = _status;
+    }
+
+    return result;
+}
+
+cJSON* wdb_exec_stmt_sized(sqlite3_stmt * stmt, const size_t max_size, int* status) {
+    if (!stmt) {
+        mdebug1("Invalid SQL statement.");
+        *status = SQLITE_ERROR;
+        return NULL;
+    }
+
+    cJSON* result = cJSON_CreateArray();
+    int result_size = 2; //'[]' json array
+    cJSON* row = NULL;
+    bool fit = true;
+    while (fit && (row = wdb_exec_row_stmt(stmt, status))) {
+        char *row_str = cJSON_PrintUnformatted(row);
+        size_t row_len = strlen(row_str)+1;
+        //Check if new agent fits in response
+        if (result_size+row_len < max_size) {
+            cJSON_AddItemToArray(result, row);
+            result_size += row_len;
+        }
+        else {
+            fit = false;
+            cJSON_Delete(row);
+            row = NULL;
+        }
+        os_free(row_str);
+    }
+
+    if (*status != SQLITE_DONE && *status != SQLITE_ROW) {
+        cJSON_Delete(result);
+        result = NULL;
+    }
+
+    return result;
 }
 
 cJSON * wdb_exec_stmt(sqlite3_stmt * stmt) {
-    int r;
-    int count;
-    int i;
     cJSON * result;
     cJSON * row;
 
@@ -811,36 +1050,13 @@ cJSON * wdb_exec_stmt(sqlite3_stmt * stmt) {
         return NULL;
     }
 
+    int status = SQLITE_ERROR;
     result = cJSON_CreateArray();
-
-    while (r = sqlite3_step(stmt), r == SQLITE_ROW) {
-        if (count = sqlite3_column_count(stmt), count > 0) {
-            row = cJSON_CreateObject();
-
-            for (i = 0; i < count; i++) {
-                switch (sqlite3_column_type(stmt, i)) {
-                case SQLITE_INTEGER:
-                case SQLITE_FLOAT:
-                    cJSON_AddNumberToObject(row, sqlite3_column_name(stmt, i), sqlite3_column_double(stmt, i));
-                    break;
-
-                case SQLITE_TEXT:
-                case SQLITE_BLOB:
-                    cJSON_AddStringToObject(row, sqlite3_column_name(stmt, i), (const char *)sqlite3_column_text(stmt, i));
-                    break;
-
-                case SQLITE_NULL:
-                default:
-                    ;
-                }
-            }
-
-            cJSON_AddItemToArray(result, row);
-        }
+    while ((row = wdb_exec_row_stmt(stmt, &status))) {
+        cJSON_AddItemToArray(result, row);
     }
 
-    if (r != SQLITE_DONE) {
-        mdebug1("SQL statement execution failed");
+    if (status != SQLITE_DONE) {
         cJSON_Delete(result);
         result = NULL;
     }
@@ -872,6 +1088,8 @@ int wdb_close(wdb_t * wdb, bool commit) {
     int result;
     int i;
 
+    w_mutex_lock(&wdb->mutex);
+
     if (wdb->refcount == 0) {
         if (wdb->transaction && commit) {
             wdb_commit2(wdb);
@@ -883,7 +1101,21 @@ int wdb_close(wdb_t * wdb, bool commit) {
             }
         }
 
+        struct stmt_cache_list *node_stmt = wdb->cache_list;
+        struct stmt_cache_list *temp = NULL;
+        while (node_stmt){
+            if (node_stmt->value.stmt) {
+                // value.stmt would be free in sqlite3_finalize.
+                sqlite3_finalize(node_stmt->value.stmt);
+            }
+            os_free(node_stmt->value.query);
+            temp = node_stmt->next;
+            os_free(node_stmt);
+            node_stmt = temp;
+        }
+
         result = sqlite3_close_v2(wdb->db);
+        w_mutex_unlock(&wdb->mutex);
 
         if (result == SQLITE_OK) {
             wdb_pool_remove(wdb);
@@ -894,6 +1126,7 @@ int wdb_close(wdb_t * wdb, bool commit) {
             return -1;
         }
     } else {
+        w_mutex_unlock(&wdb->mutex);
         mdebug1("Couldn't close database for agent %s: refcount = %u", wdb->id, wdb->refcount);
         return -1;
     }
@@ -963,7 +1196,7 @@ int wdb_sql_exec(wdb_t *wdb, const char *sql_exec) {
 int wdb_remove_database(const char * agent_id) {
     char path[PATH_MAX];
 
-    snprintf(path, PATH_MAX, "%s%s/%s.db", isChroot() ? "/" : "", WDB2_DIR, agent_id);
+    snprintf(path, PATH_MAX, "%s/%s.db", WDB2_DIR, agent_id);
     int result = unlink(path);
 
     if (result == -1) {
@@ -993,7 +1226,7 @@ cJSON *wdb_remove_multiple_agents(char *agent_list) {
     cJSON_AddItemToObject(response, "agents", json_agents = cJSON_CreateObject());
 
     // Get agents id separated by whitespace
-    agents = wm_strtok(agent_list);
+    agents = w_strtok(agent_list);
 
     for (n = 0; agents && agents[n]; n++) {
         if (strcmp(agents[n], "") != 0) {
@@ -1033,7 +1266,7 @@ cJSON *wdb_remove_multiple_agents(char *agent_list) {
         }
     }
 
-    free(agents);
+    free_strarray(agents);
     json_formated = cJSON_PrintUnformatted(response);
     mdebug1("Deleting databases. JSON output: %s", json_formated);
     os_free(json_formated);
@@ -1057,7 +1290,7 @@ int wdb_journal_wal(sqlite3 *db) {
 
 /**
  * @brief Frees agent_info_data struct memory.
- * 
+ *
  * @param[in] agent_data Pointer to the struct to be freed.
  */
 void wdb_free_agent_info_data(agent_info_data *agent_data) {
@@ -1069,6 +1302,7 @@ void wdb_free_agent_info_data(agent_info_data *agent_data) {
         os_free(agent_data->node_name);
         os_free(agent_data->agent_ip);
         os_free(agent_data->labels);
+        os_free(agent_data->connection_status);
         os_free(agent_data->sync_status);
         if (agent_data->osd) {
             os_free(agent_data->osd->os_name);
@@ -1084,4 +1318,18 @@ void wdb_free_agent_info_data(agent_info_data *agent_data) {
         }
         os_free(agent_data);
     }
+}
+
+sqlite3_stmt* wdb_init_stmt_in_cache(wdb_t* wdb, wdb_stmt statement_index){
+    if (!wdb->transaction && wdb_begin2(wdb) < 0) {
+        mdebug1("Cannot begin transaction");
+        return NULL;
+    }
+
+    if (wdb_stmt_cache(wdb, statement_index) < 0) {
+        mdebug1("Cannot cache statement");
+        return NULL;
+    }
+
+    return wdb->stmt[statement_index];
 }

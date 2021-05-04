@@ -9,6 +9,7 @@ import random
 import re
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 from configparser import RawConfigParser, NoOptionError
 from io import StringIO
 from os import remove, path as os_path
@@ -17,7 +18,7 @@ from xml.dom.minidom import parseString
 
 from wazuh.core import common
 from wazuh.core.exception import WazuhInternalError, WazuhError
-from wazuh.core.wazuh_socket import OssecSocket
+from wazuh.core.wazuh_socket import WazuhSocket
 from wazuh.core.results import WazuhResult
 from wazuh.core.utils import cut_array, load_wazuh_xml, safe_move
 
@@ -203,6 +204,11 @@ def _read_option(section_name, opt):
         opt_value = {'value': opt.text}
         for a in opt.attrib:
             opt_value[a] = opt.attrib[a]
+    elif section_name == 'localfile' and opt_name == 'query':
+        # Remove new lines, empty spaces and backslashes
+        opt_value = re.sub(r'(?:(\n) +)|.*\n$', '', re.sub(r'\\+<', '<', re.sub(r'\\+>', '>', opt.text)))
+    elif section_name == 'remote' and opt_name == 'protocol':
+        opt_value = [elem.strip() for elem in opt.text.split(',')]
     else:
         if opt.attrib:
             opt_value = {}
@@ -217,7 +223,20 @@ def _read_option(section_name, opt):
         else:
             opt_value = opt.text
 
-    return opt_name, opt_value
+    return opt_name, _replace_custom_values(opt_value)
+
+
+def _replace_custom_values(opt_value):
+    """Replaces custom values introduced by 'load_wazuh_xml' with their real values."""
+    if type(opt_value) is list:
+        for i in range(0, len(opt_value)):
+            opt_value[i] = _replace_custom_values(opt_value[i])
+    elif type(opt_value) is dict:
+        for key in opt_value.keys():
+            opt_value[key] = _replace_custom_values(opt_value[key])
+    elif type(opt_value) is str:
+        return opt_value.replace('_custom_amp_lt_', '&lt;').replace('_custom_amp_gt_', '&gt;')
+    return opt_value
 
 
 def _conf2json(src_xml, dst_json):
@@ -231,7 +250,7 @@ def _conf2json(src_xml, dst_json):
 
         for option in list(section):
             option_name, option_value = _read_option(section_name, option)
-            if type(option_value) is list:
+            if type(option_value) is list and not (section_name == 'remote' and option_name == 'protocol'):
                 for ov in option_value:
                     _insert(section_json, section_name, option_name, ov)
             else:
@@ -638,30 +657,45 @@ def upload_group_configuration(group_id, file_content):
     """
     if not os_path.exists(os_path.join(common.shared_path, group_id)):
         raise WazuhResourceNotFound(1710, group_id)
-
     # path of temporary files for parsing xml input
-    tmp_file_path = os_path.join(common.ossec_path, "tmp", f"api_tmp_file_{time.time()}_{random.randint(0, 1000)}.xml")
-
+    tmp_file_path = os_path.join(common.wazuh_path, "tmp", f"api_tmp_file_{time.time()}_{random.randint(0, 1000)}.xml")
     # create temporary file for parsing xml input and validate XML format
     try:
         with open(tmp_file_path, 'w') as tmp_file:
-            # beauty xml file
+            custom_entities = {
+                '_custom_open_tag_': '\\<',
+                '_custom_close_tag_': '\\>',
+                '_custom_amp_lt_': '&lt;',
+                '_custom_amp_gt_': '&gt;'
+            }
+
+            # Replace every custom entity
+            for character, replacement in custom_entities.items():
+                file_content = re.sub(replacement.replace('\\', '\\\\'), character, file_content)
+
+            # Beautify xml file using a minidom.Document
             xml = parseString(f'<root>\n{file_content}\n</root>')
-            # remove first line (XML specification: <? xmlversion="1.0" ?>), <root> and </root> tags, and empty lines
+
+            # Remove first line (XML specification: <? xmlversion="1.0" ?>), <root> and </root> tags, and empty lines
             pretty_xml = '\n'.join(filter(lambda x: x.strip(), xml.toprettyxml(indent='  ').split('\n')[2:-2])) + '\n'
-            # revert xml.dom replacements
+
+            # Revert xml.dom replacements and remove any whitespaces and '\n' between '\' and '<' if present
             # github.com/python/cpython/blob/8e0418688906206fe59bd26344320c0fc026849e/Lib/xml/dom/minidom.py#L305
-            pretty_xml = pretty_xml.replace("&amp;", "&").replace("&lt;", "<").replace("&quot;", "\"", ) \
-                .replace("&gt;", ">")
+            pretty_xml = re.sub(r'(?:(?<=\\) +)', '', pretty_xml.replace("&amp;", "&").replace("&lt;", "<")
+                                .replace("&quot;", "\"", ).replace("&gt;", ">").replace("\\\n", "\\"))
+
+            # Restore the replaced custom entities
+            for replacement, character in custom_entities.items():
+                pretty_xml = re.sub(replacement, character.replace('\\', '\\\\'), pretty_xml)
+
             tmp_file.write(pretty_xml)
     except Exception as e:
         raise WazuhError(1113, str(e))
 
     try:
-
         # check Wazuh xml format
         try:
-            subprocess.check_output([os_path.join(common.ossec_path, "bin", "verify-agent-conf"), '-f', tmp_file_path],
+            subprocess.check_output([os_path.join(common.wazuh_path, "bin", "verify-agent-conf"), '-f', tmp_file_path],
                                     stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             # extract error message from output.
@@ -732,7 +766,7 @@ def get_active_configuration(agent_id, component, configuration):
     if component not in components:
         raise WazuhError(1101, f'Valid components: {", ".join(components)}')
 
-    sockets_path = os_path.join(common.ossec_path, "queue", "ossec")
+    sockets_path = os_path.join(common.wazuh_path, "queue", "sockets")
 
     if agent_id == '000':
         dest_socket = os_path.join(sockets_path, component)
@@ -743,7 +777,7 @@ def get_active_configuration(agent_id, component, configuration):
 
     # Socket connection
     try:
-        s = OssecSocket(dest_socket)
+        s = WazuhSocket(dest_socket)
     except Exception:
         raise WazuhInternalError(1121)
 
@@ -765,7 +799,7 @@ def get_active_configuration(agent_id, component, configuration):
         # Include password if auth->use_password enabled and authd.pass file exists
         if msg.get('auth', {}).get('use_password') == 'yes':
             try:
-                with open(os_path.join(common.ossec_path, "etc", "authd.pass"), 'r') as f:
+                with open(os_path.join(common.wazuh_path, "etc", "authd.pass"), 'r') as f:
                     msg['authd.pass'] = f.read().rstrip()
             except IOError:
                 pass
@@ -774,3 +808,19 @@ def get_active_configuration(agent_id, component, configuration):
     else:
         raise WazuhError(1117 if "No such file or directory" in rec_msg or "Cannot send request" in rec_msg else 1116,
                          extra_message='{0}:{1}'.format(component, configuration))
+
+
+def write_ossec_conf(new_conf: str):
+    """
+    Replace the current wazuh configuration (ossec.conf) with the provided configuration.
+
+    Parameters
+    ----------
+    new_conf: str
+        The new configuration to be applied.
+    """
+    try:
+        with open(common.ossec_conf, 'w') as f:
+            f.writelines(new_conf)
+    except Exception:
+        raise WazuhError(1126)

@@ -23,14 +23,18 @@
 #include <windows.h>
 #endif
 
-#define OS_PIDFILE  "/var/run"
+#ifdef __MACH__
+#include <libproc.h>
+#endif
+
+#define OS_PIDFILE  "var/run"
 #define UCS2_LE 1
 #define UCS2_BE 2
 
 #ifdef WIN32
 #define PATH_SEP '\\'
 typedef uint64_t wino_t;
-int isVista;
+extern int isVista;
 #else
 #define PATH_SEP '/'
 typedef ino_t wino_t;
@@ -40,7 +44,6 @@ typedef struct File {
     char *name;
     FILE *fp;
 } File;
-
 
 /**
  * @brief Set the program name. Must be done before *anything* else.
@@ -459,6 +462,15 @@ int checkBinaryFile(const char *f_name);
  */
 int64_t w_ftell (FILE *x);
 
+/**
+ * @brief Set the current file position of the given stream.
+*        This is a wrapper for `fseek()` in UNIX and `_fseeki64()` in Windows.
+ * @param x File pointer.
+ * @param pos File position.
+ * @param mode Position used as reference for the offset: SEEK_SET, SEEK_CURRENT, SEEK_END
+ * @return  If successful, the function returns zero. Otherwise, it returns -1.
+ */
+int w_fseek(FILE *x, int64_t pos, int mode);
 
 /**
  * @brief Prevent children processes from inheriting a file pointer.
@@ -496,6 +508,15 @@ int get_creation_date(char *dir, SYSTEMTIME *utc);
 
 
 /**
+ * @brief Get the modification date object. (Windows)
+ *
+ * @param file Path of the file.
+ * @return time_t date of modification format.
+ */
+time_t get_UTC_modification_time(const char *file);
+
+
+/**
  * @brief Move to the directory where this executable lives in. (Windows)
  *
  */
@@ -509,6 +530,16 @@ void w_ch_exec_dir();
  * @return File size or -1 on error.
  */
 DWORD FileSizeWin(const char * file);
+
+/**
+ * @brief Open a file
+ *
+ * This mode of opening the file allows reading \r\n instead of \n.
+ *
+ * @param file pathfile to open
+ * @return file descriptor on success, otherwise null.
+ */
+FILE * w_fopen_r(const char *file, const char * mode);
 
 #endif // Windows
 
@@ -598,4 +629,14 @@ int w_is_compressed_bz2_file(const char * path);
  */
 int w_uncompress_bz2_gz_file(const char * path, const char * dest);
 #endif /* CLIENT */
+
+/**
+ * @brief Get the Wazuh installation directory
+ *
+ * It is obtained from the /proc directory, argv[0], or the env variable WAZUH_HOME
+ * 
+ * @param arg ARGV0 - Program name
+ * @return Pointer to the Wazuh installation path on success
+ */
+char *w_homedir(char *arg);
 #endif /* FILE_OP_H */

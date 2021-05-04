@@ -19,6 +19,15 @@ static int wdb_adjust_upgrade(wdb_t *wdb, int upgrade_step);
 // - The attributes field of the fim_entry table is decoded
 static int wdb_adjust_v4(wdb_t *wdb);
 
+/* SQL statements used for the global.db upgrade */
+typedef enum wdb_stmt_global {
+    WDB_STMT_GLOBAL_CHECK_MANAGER_KEEPALIVE,
+} wdb_stmt_metadata;
+
+static const char *SQL_GLOBAL_STMT[] = {
+    "SELECT COUNT(*) FROM agent WHERE id=0 AND last_keepalive=253402300799;",
+};
+
 // Upgrade agent database to last version
 wdb_t * wdb_upgrade(wdb_t *wdb) {
     const char * UPDATES[] = {
@@ -27,6 +36,8 @@ wdb_t * wdb_upgrade(wdb_t *wdb) {
         schema_upgrade_v3_sql,
         schema_upgrade_v4_sql,
         schema_upgrade_v5_sql,
+        schema_upgrade_v6_sql,
+        schema_upgrade_v7_sql
     };
 
     char db_version[OS_SIZE_256 + 2];
@@ -63,6 +74,7 @@ wdb_t * wdb_upgrade(wdb_t *wdb) {
 wdb_t * wdb_upgrade_global(wdb_t *wdb) {
     const char * UPDATES[] = {
         schema_global_upgrade_v1_sql,
+        schema_global_upgrade_v2_sql
     };
 
     char db_version[OS_SIZE_256 + 2];
@@ -75,7 +87,7 @@ wdb_t * wdb_upgrade_global(wdb_t *wdb) {
         return wdb;
     case 0:
         // The table doesn't exist. Checking if version is 3.10 to upgrade or recreate
-        if (wdb_global_check_manager_keepalive(wdb) != 1) {
+        if (wdb_upgrade_check_manager_keepalive(wdb) != 1) {
             wdb = wdb_backup_global(wdb, -1);
             return wdb;
         }
@@ -155,7 +167,7 @@ wdb_t * wdb_backup_global(wdb_t *wdb, int version) {
         if (wdb_create_backup_global(version) != -1) {
             mwarn("Creating Global DB backup and creating empty DB");
             unlink(path);
-            
+
             if (OS_SUCCESS != wdb_create_global(path)) {
                 merror("Couldn't create SQLite database '%s'", path);
                 return NULL;
@@ -253,7 +265,7 @@ int wdb_create_backup_global(int version) {
     }
 
     while (nbytes = fread(buffer, 1, 4096, source), nbytes) {
-        if (fwrite(buffer, 1, nbytes, dest) != nbytes) {            
+        if (fwrite(buffer, 1, nbytes, dest) != nbytes) {
             result = OS_INVALID;
             break;
         }
@@ -335,4 +347,33 @@ int wdb_adjust_v4(wdb_t *wdb) {
     }
 
     return 0;
+}
+
+// Check the presence of manager's keepalive in the global database
+int wdb_upgrade_check_manager_keepalive(wdb_t *wdb) {
+    sqlite3_stmt *stmt = NULL;
+    int result = -1;
+
+    if (sqlite3_prepare_v2(wdb->db,
+                           SQL_GLOBAL_STMT[WDB_STMT_GLOBAL_CHECK_MANAGER_KEEPALIVE],
+                           -1,
+                           &stmt,
+                           NULL) != SQLITE_OK) {
+        merror("DB(%s) sqlite3_prepare_v2(): %s", wdb->id, sqlite3_errmsg(wdb->db));
+        return OS_INVALID;
+    }
+
+    switch (sqlite3_step(stmt)) {
+    case SQLITE_ROW:
+        result = sqlite3_column_int(stmt, 0);
+        break;
+    case SQLITE_DONE:
+        result = OS_SUCCESS;
+        break;
+    default:
+        result = OS_INVALID;
+    }
+
+    sqlite3_finalize(stmt);
+    return result;
 }

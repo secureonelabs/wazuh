@@ -7,18 +7,25 @@ import glob
 import hashlib
 import json
 import operator
+import random
 import re
-import shutil
 import stat
 import sys
+import time
 import typing
+from copy import deepcopy
 from datetime import datetime, timedelta
 from itertools import groupby, chain
-from os import chmod, chown, path, listdir, mkdir, curdir, rename, utime
+from os import chmod, chown, path, listdir, mkdir, curdir, rename, utime, remove, walk
+from os.path import join, basename, relpath
+from pyexpat import ExpatError
+from shutil import Error, copyfile, move
 from subprocess import CalledProcessError, check_output
-from xml.etree.ElementTree import fromstring
-from api import configuration
+from xml.dom.minidom import parseString
+from xml.etree import ElementTree
 
+import wazuh.core.results as results
+from api import configuration
 from wazuh.core import common
 from wazuh.core.database import Connection
 from wazuh.core.exception import WazuhError, WazuhInternalError
@@ -70,7 +77,7 @@ def previous_month(n=1):
 
 
 def execute(command):
-    """Executes a command. It is used to execute ossec commands.
+    """Executes a command. It is used to execute Wazuh commands.
 
     :param command: Command as list.
     :return: If output.error !=0 returns output.data, otherwise launches a WazuhException with output.error as error code and output.message as description.
@@ -453,6 +460,32 @@ def chown_r(filepath, uid, gid):
                 chown_r(itempath, uid, gid)
 
 
+def delete_wazuh_file(full_path):
+    """Delete a Wazuh file.
+
+    Parameters
+    ----------
+    full_path : str
+        Full path of the file to delete.
+
+    Returns
+    -------
+    bool
+        True if success.
+    """
+    if not full_path.startswith(common.wazuh_path) or '..' in full_path:
+        raise WazuhError(1907)
+
+    if path.exists(full_path):
+        try:
+            remove(full_path)
+            return True
+        except IOError:
+            raise WazuhError(1907)
+    else:
+        raise WazuhError(1906)
+
+
 def safe_move(source, target, ownership=(common.ossec_uid(), common.ossec_gid()), time=None, permissions=None):
     """Moves a file even between filesystems
 
@@ -468,7 +501,7 @@ def safe_move(source, target, ownership=(common.ossec_uid(), common.ossec_gid())
     # Create temp file. Move between
     tmp_path, tmp_filename = path.split(target)
     tmp_target = path.join(tmp_path, f".{tmp_filename}.tmp")
-    shutil.move(source, tmp_target, copy_function=shutil.copyfile)
+    move(source, tmp_target, copy_function=copyfile)
 
     try:
         # Overwrite the file atomically.
@@ -478,7 +511,7 @@ def safe_move(source, target, ownership=(common.ossec_uid(), common.ossec_gid())
         # For example, when target is a mounted file in a Docker container
         # However, this is not an atomic operation and could lead to race conditions
         # if the file is read/written simultaneously with other processes
-        shutil.move(tmp_target, target, copy_function=shutil.copyfile)
+        move(tmp_target, target, copy_function=copyfile)
 
     # Set up metadata
     chown(target, *ownership)
@@ -631,11 +664,13 @@ def plain_dict_to_nested_dict(data, nested=None, non_nested=None, force_fields=[
 def check_remote_commands(data):
     """Check if remote commands are allowed.
     If not, it will check if the found command is in the list of exceptions.
+
     Parameters
     ----------
     data : str
         Configuration file
     """
+
     def check_section(command_regex, section, split_section):
         try:
             for line in command_regex.findall(data)[0].split(split_section):
@@ -671,7 +706,8 @@ def load_wazuh_xml(xml_path, data=None):
         good_comment = comment.group(2).replace('--', '..')
         data = data.replace(comment.group(2), good_comment)
 
-    # < characters should be scaped as &lt; unless < is starting a <tag> or a comment
+    # Replace &lt; and &gt; currently present in the config
+    data = data.replace('&lt;', '_custom_amp_lt_').replace('&gt;', '_custom_amp_gt_')
 
     custom_entities = {
         'backslash': '\\'
@@ -681,25 +717,26 @@ def load_wazuh_xml(xml_path, data=None):
     for character, replacement in custom_entities.items():
         data = re.sub(replacement.replace('\\', '\\\\'), f'&{character};', data)
 
+    # < characters should be escaped as &lt; unless < is starting a <tag> or a comment
     data = re.sub(r"<(?!/?\w+.+>|!--)", "&lt;", data)
 
     # replace \< by &lt;
-    data = re.sub(r'\\<', '&lt;', data)
+    data = re.sub(r'&backslash;<', '&backslash;&lt;', data)
 
     # replace \> by &gt;
-    data = re.sub(r'\\>', '&gt;', data)
+    data = re.sub(r'&backslash;>', '&backslash;&gt;', data)
 
     # default entities
     default_entities = ['amp', 'lt', 'gt', 'apos', 'quot']
 
-    # & characters should be scaped if they don't represent an &entity;
+    # & characters should be escaped if they don't represent an &entity;
     data = re.sub(f"&(?!({'|'.join(default_entities + list(custom_entities))});)", "&amp;", data)
 
     entities = '<!DOCTYPE xmlfile [\n' + \
                '\n'.join([f'<!ENTITY {name} "{value}">' for name, value in custom_entities.items()]) + \
                '\n]>\n'
 
-    return fromstring(entities + '<root_tag>' + data + '</root_tag>')
+    return ElementTree.fromstring(entities + '<root_tag>' + data + '</root_tag>')
 
 
 class WazuhVersion:
@@ -834,8 +871,43 @@ def filter_array_by_query(q: str, input_array: typing.List) -> typing.List:
         else:
             return False
 
+    def get_match_candidates(iterable, key_list: list, candidates: list):
+        """Get the match candidates following a list of keys.
+
+        Parameters
+        ----------
+        iterable : dict or list
+            Iterable object to be iterated over.
+        key_list : list
+            List of keys.
+        candidates : list
+            Empty list that will be filled
+
+        Returns
+        -------
+        True if there is one match at least. False otherwise.
+        """
+        for index, key in enumerate(key_list):
+            if isinstance(iterable, list):
+                candidate_list = list()
+                for element in list(iterable):
+                    candidate_list.append(get_match_candidates(element, key_list[index:], candidates))
+                if True in candidate_list:
+                    return True
+                else:
+                    return False
+            else:
+                if key in iterable:
+                    iterable = iterable[key]
+                else:
+                    return False
+        else:
+            candidates.append(iterable)
+            return True
+
     # compile regular expression only one time when function is called
-    re_get_elements = re.compile(r'([\w\-]+)(?:\.?)((?:[\w\-]*))(=|!=|<|>|~)([\w\-./:]+)')  # get elements in a clause
+    # get elements in a clause
+    re_get_elements = re.compile(r'([\w\-]+)(?:\.?)((?:[\w\-](?:\.[\w\-])*)*)(=|!=|<|>|~)([\w\-./: ]+)')
     # get a list with OR clauses
     or_clauses = q.split(',')
     output_array = []
@@ -849,24 +921,21 @@ def filter_array_by_query(q: str, input_array: typing.List) -> typing.List:
             for and_clause in and_clauses:
                 # get elements in a clause
                 try:
-                    field_name, field_subname, op, value = re_get_elements.match(and_clause).groups()
+                    field_name, field_subnames, op, value = re_get_elements.match(and_clause).groups()
                 except AttributeError:
                     raise WazuhError(1407, extra_message=f"Parameter 'q' is not valid: '{and_clause}'")
 
                 # check if a clause is satisfied
-                if field_subname:
-                    if field_name in elem and field_subname in elem[field_name] and \
-                            check_clause(elem[field_name][field_subname], op, value):
+                match_candidates = list()
+                if field_subnames and field_name in elem and \
+                        get_match_candidates(deepcopy(elem[field_name]), field_subnames.split('.'), match_candidates):
+                    if any([check_clause(candidate, op, value) for candidate in match_candidates if candidate]):
                         continue
-                    else:
-                        match = False
-                        break
                 else:
                     if field_name in elem and check_clause(elem[field_name], op, value):
                         continue
-                    else:
-                        match = False
-                        break
+                match = False
+                break
 
             # if match = True, add element to output and break the loop
             if match:
@@ -945,6 +1014,8 @@ class WazuhDBBackend(AbstractDatabaseBackend):
                 value = f"'{v}'"
             else:
                 raise TypeError(f'Invalid type for request parameters: {type(v)}')
+            # Escape backslash to avoid re error
+            value = value.replace('\\', '\\\\')
             query = re.sub(r':\b' + re.escape(str(k)) + r'\b', value, query)
         return query
 
@@ -952,6 +1023,8 @@ class WazuhDBBackend(AbstractDatabaseBackend):
         """Render query attending the format."""
         if self.query_format == 'mitre':
             return f'mitre sql {query}'
+        elif self.query_format == 'task':
+            return f'task sql {query}'
         elif self.query_format == 'global':
             return f'global sql {query}'
         else:
@@ -1033,7 +1106,7 @@ class WazuhDBQuery(object):
         self.date_fields = date_fields
         self.extra_fields = extra_fields
         self.q = query
-        self.legacy_filters = filters
+        self.legacy_filters = filters.copy() if filters else filters
         self.inverse_fields = {v: k for k, v in self.fields.items()}
         self.backend = backend
         self.rbac_negate = rbac_negate
@@ -1179,9 +1252,7 @@ class WazuhDBQuery(object):
             self.query += " WHERE " if 'WHERE' not in self.query else ' AND '
 
     def _process_filter(self, field_name, field_filter, q_filter):
-        if field_name == "status":
-            self._filter_status(q_filter)
-        elif field_name in self.date_fields and not isinstance(q_filter['value'], (int, float)):
+        if field_name in self.date_fields and not isinstance(q_filter['value'], (int, float)):
             # Filter a date, but only if it is in string (YYYY-MM-DD hh:mm:ss) format.
             # If it matches the same format as DB (timestamp integer), filter directly by value (next if cond).
             self._filter_date(q_filter, field_name)
@@ -1405,14 +1476,221 @@ class WazuhDBQueryGroupBy(WazuhDBQuery):
         self.select = self.select & self.filter_fields['fields']
 
 
-@common.context_cached('system_files')
-def get_files():
-    folders = ['etc/rules', 'etc/decoders', 'etc/lists', 'ruleset/sca', 'ruleset/decoders', 'ruleset/rules']
-    files = set()
-    for folder in folders:
-        for extension in '*.yml', '*.yml.disabled', '*.xml', '*.cdb':
-            files.update({f.replace(common.ossec_path + '/', "") for f in glob.glob(
-                path.join(common.ossec_path, folder, extension), recursive=True)})
-    files.add('etc/ossec.conf')
+@common.context_cached('system_rules')
+def expand_rules():
+    """Return all ruleset rule files in the system.
 
-    return files
+    Returns
+    -------
+    set
+    """
+    folders = [common.ruleset_rules_path, common.user_rules_path]
+    rules = set()
+    for folder in folders:
+        for _, _, files in walk(folder):
+            for f in filter(lambda x: x.endswith(common.RULES_EXTENSION), files):
+                rules.add(f)
+
+    return rules
+
+
+@common.context_cached('system_decoders')
+def expand_decoders():
+    """Return all ruleset decoder files in the system.
+
+    Returns
+    -------
+    set
+    """
+    folders = [common.ruleset_decoders_path, common.user_decoders_path]
+    decoders = set()
+    for folder in folders:
+        for _, _, files in walk(folder):
+            for f in filter(lambda x: x.endswith(common.DECODERS_EXTENSION), files):
+                decoders.add(f)
+
+    return decoders
+
+
+@common.context_cached('system_lists')
+def expand_lists():
+    """Return all cdb list files in the system.
+
+    Returns
+    -------
+    set
+    """
+    folders = [common.ruleset_lists_path, common.user_lists_path]
+    lists = set()
+    for folder in folders:
+        for _, _, files in walk(folder):
+            for f in filter(lambda x: x.endswith(common.LISTS_EXTENSION), files):
+                # List files do not have an extension at the moment
+                if '.' not in f:
+                    lists.add(f)
+
+    return lists
+
+
+def add_dynamic_detail(detail, value, attribs, details):
+    """Add a detail with attributes (i.e. regex with negate or type).
+
+    Parameters
+    ----------
+    detail : str
+        Name of the detail.
+    value : str
+        Detail value.
+    attribs : dict
+        Dictionary with the XML attributes.
+    details : dict
+        Dictionary with all the current details.
+    """
+    if detail in details:
+        new_pattern = details[detail]['pattern'] + value
+        details[detail].clear()
+        details[detail]['pattern'] = new_pattern
+    else:
+        details[detail] = dict()
+        details[detail]['pattern'] = value
+
+    details[detail].update(attribs)
+
+
+def validate_wazuh_xml(content: str, config_file: bool = False):
+    """Validate Wazuh XML files (rules, decoders and ossec.conf)
+
+    Parameters
+    ----------
+    content : str
+        File content.
+    config_file : bool
+        Validate remote commands if True.
+    """
+
+    # -- characters are not allowed in XML comments
+    content = replace_in_comments(content, '--', '%wildcard%')
+
+    # Create temporary file for parsing xml input
+    try:
+        # Beautify xml file and escape '&' character as it could come in some tag values unescaped
+        xml = parseString(f'<root>{content}</root>'.replace('&', '&amp;'))
+        # Remove first line (XML specification: <? xmlversion="1.0" ?>), <root> and </root> tags, and empty lines
+        indent = '  '  # indent parameter for toprettyxml function
+        pretty_xml = '\n'.join(filter(lambda x: x.strip(), xml.toprettyxml(indent=indent).split('\n')[2:-2])) + '\n'
+        # Revert xml.dom replacings
+        # (https://github.com/python/cpython/blob/8e0418688906206fe59bd26344320c0fc026849e/Lib/xml/dom/minidom.py#L305)
+        pretty_xml = pretty_xml.replace("&amp;", "&").replace("&lt;", "<").replace("&quot;", "\"", ) \
+            .replace("&gt;", ">").replace('&apos;', "'")
+        # Delete two first spaces of each line
+        final_xml = re.sub(fr'^{indent}', '', pretty_xml, flags=re.MULTILINE)
+        final_xml = replace_in_comments(final_xml, '%wildcard%', '--')
+
+        # Check if remote commands are allowed if it is a configuration file
+        config_file and check_remote_commands(final_xml)
+        # Check xml format
+        load_wazuh_xml(xml_path='', data=final_xml)
+    except ExpatError:
+        raise WazuhError(1113)
+    except WazuhError as e:
+        raise e
+    except Exception as e:
+        raise WazuhError(1113, str(e))
+
+
+def upload_file(content, path, check_xml_formula_values=True):
+    """
+    Upload files (rules, lists, decoders and ossec.conf)
+    :param content: content of the XML file
+    :param path: Destination of the new XML file
+    :return: Confirmation message
+    """
+
+    def escape_formula_values(xml_string):
+        """Prepend with a single quote possible formula injections."""
+        formula_characters = ('=', '+', '-', '@')
+        et = ElementTree.ElementTree(ElementTree.fromstring(f'<root>{xml_string}</root>'))
+        full_preprend, beginning_preprend = list(), list()
+        for node in et.iter():
+            if node.tag and node.tag.startswith(formula_characters):
+                full_preprend.append(node.tag)
+            if node.text and node.text.startswith(formula_characters) and ("'" in node.text or '"' in node.text):
+                beginning_preprend.append(node.text)
+
+        for text in full_preprend:
+            xml_string = re.sub(f'<{re.escape(text)}>', f"<'{text}'>", xml_string)
+            xml_string = re.sub(f'</{re.escape(text)}>', f"</'{text}'>", xml_string)
+
+        for text in beginning_preprend:
+            xml_string = re.sub(f'>{re.escape(text)}<', f">'{text}<", xml_string)
+
+        return xml_string
+
+    # Path of temporary files for parsing xml input
+    tmp_file_path = '{}/tmp/api_tmp_file_{}_{}.tmp'.format(common.wazuh_path, time.time(), random.randint(0, 1000))
+    try:
+        with open(tmp_file_path, 'w') as tmp_file:
+            final_file = escape_formula_values(content) if check_xml_formula_values else content
+            tmp_file.write(final_file)
+        chmod(tmp_file_path, 0o660)
+    except IOError:
+        raise WazuhInternalError(1005)
+
+    # Move temporary file to group folder
+    try:
+        new_conf_path = join(common.wazuh_path, path)
+        safe_move(tmp_file_path, new_conf_path, permissions=0o660)
+    except Error:
+        raise WazuhInternalError(1016)
+
+    return results.WazuhResult({'message': 'File was successfully updated'})
+
+
+def delete_file_with_backup(backup_file: str, abs_path: str, delete_function: callable):
+    """Try to delete a file doing a backup beforehand.
+
+    Parameters
+    ----------
+    backup_file : str
+        Name of the backup file.
+    abs_path : str
+        Absolute path of the file to delete.
+    delete_function : callable
+        Function that will be used to delete the file.
+
+    Raises
+    ------
+    WazuhError(1019)
+        If there is any `IOError` while doing the backup.
+    """
+    try:
+        copyfile(abs_path, backup_file)
+    except IOError:
+        raise WazuhError(1019)
+    delete_function(filename=basename(abs_path))
+
+
+def replace_in_comments(original_content, to_be_replaced, replacement):
+    xml_comment = re.compile(r"(<!--(.*?)-->)", flags=re.MULTILINE | re.DOTALL)
+    for comment in xml_comment.finditer(original_content):
+        good_comment = comment.group(2).replace(to_be_replaced, replacement)
+        original_content = original_content.replace(comment.group(2), good_comment)
+    return original_content
+
+
+def to_relative_path(full_path: str, prefix: str = common.wazuh_path):
+    """Return a relative path from the Wazuh base directory.
+
+    Parameters
+    ----------
+    full_path : str
+        Absolute path.
+    prefix : str, opt
+        Prefix to strip from the absolute path. Default `common.wazuh_path`
+
+    Returns
+    -------
+    str
+        Relative path to `full_path` from `prefix`.
+    """
+    return relpath(full_path, prefix)

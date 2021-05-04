@@ -45,7 +45,8 @@ const wm_context WM_CISCAT_CONTEXT = {
     "cis-cat",
     (wm_routine)wm_ciscat_main,
     (wm_routine)(void *)wm_ciscat_destroy,
-    (cJSON * (*)(const void *))wm_ciscat_dump
+    (cJSON * (*)(const void *))wm_ciscat_dump,
+    NULL
 };
 
 // CIS-CAT module main function. It won't return.
@@ -92,7 +93,7 @@ void* wm_ciscat_main(wm_ciscat *ciscat) {
                     skip_java = 1;
                 }
             #else
-                snprintf(java_fullpath, OS_MAXSTR - 1, "%s/%s", DEFAULTDIR, ciscat->java_path);
+                snprintf(java_fullpath, OS_MAXSTR - 1, "%s", ciscat->java_path);
             #endif
                 break;
             default:
@@ -126,7 +127,7 @@ void* wm_ciscat_main(wm_ciscat *ciscat) {
                     snprintf(cis_path, OS_MAXSTR - 1, "%s\\%s", current, ciscat->ciscat_path);
                 }
             #else
-                snprintf(cis_path, OS_MAXSTR - 1, "%s/%s", DEFAULTDIR, ciscat->ciscat_path);
+                snprintf(cis_path, OS_MAXSTR - 1, "%s", ciscat->ciscat_path);
             #endif
                 break;
             default:
@@ -170,7 +171,13 @@ void* wm_ciscat_main(wm_ciscat *ciscat) {
             if (id < 0)
                 id = -id;
         #else
-            int id = wm_sys_get_random_id();
+            char random_id[RANDOM_LENGTH];
+            snprintf(random_id, RANDOM_LENGTH - 1, "%u%u", os_random(), os_random());
+            int id = atoi(random_id);
+
+            if (id < 0) {
+                id = -id;
+            }
         #endif
 
             for (eval = ciscat->evals; eval; eval = eval->next) {
@@ -230,7 +237,7 @@ void wm_ciscat_setup(wm_ciscat *_ciscat) {
 
 #ifndef WIN32
 
-    queue_fd = StartMQ(DEFAULTQPATH, WRITE, INFINITE_OPENQ_ATTEMPTS);
+    queue_fd = StartMQ(DEFAULTQUEUE, WRITE, INFINITE_OPENQ_ATTEMPTS);
 
     if (queue_fd < 0) {
         mterror(WM_CISCAT_LOGTAG, "Can't connect to queue.");

@@ -13,8 +13,13 @@
 #include "shared.h"
 #include "os_net/os_net.h"
 
+#define WDBQUERY_SIZE OS_BUFFER_SIZE
+#define WDBOUTPUT_SIZE OS_MAXSTR
+
+#define FIELD_SEPARATOR_DBSYNC "|"
+
 /// Enumeration of communication with Wazuh DB status.
-typedef enum wdbc_result { 
+typedef enum wdbc_result {
         WDBC_OK,        ///< Command processed successfully
         WDBC_DUE,       ///< Command processed successfully with pending data
         WDBC_ERROR,     ///< An error occurred
@@ -29,6 +34,7 @@ int wdbc_query(const int sock, const char *query, char *response, const int len)
 int wdbc_query_ex(int *sock, const char *query, char *response, const int len);
 int wdbc_parse_result(char *result, char **payload);
 cJSON * wdbc_query_parse_json(int *sock, const char *query, char *response, const int len);
+wdbc_result wdbc_query_parse(int *sock, const char *query, char *response, const int len, char** payload);
 
 /**
  * @brief Closes a socket connection if exists

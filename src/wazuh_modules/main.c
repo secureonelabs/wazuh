@@ -25,13 +25,18 @@ int main(int argc, char **argv)
     int c;
     int wm_debug = 0;
     int test_config = 0;
-    wmodule *cur_module;
-    gid_t gid;
-    const char *group = GROUPGLOBAL;
-    wm_debug_level = getDefine_Int("wazuh_modules", "debug", 0, 2);
-
+    
     /* Set the name */
     OS_SetName(ARGV0);
+    
+    // Define current working directory
+    char * home_path = w_homedir(argv[0]);
+    if (chdir(home_path) == -1) {
+        merror_exit(CHDIR_ERROR, home_path, errno, strerror(errno));
+    }
+
+    wmodule *cur_module;
+    wm_debug_level = getDefine_Int("wazuh_modules", "debug", 0, 2);
 
     // Get command line options
 
@@ -68,16 +73,8 @@ int main(int argc, char **argv)
         }
     }
 
-    /* Check if the group given is valid */
-    gid = Privsep_GetGroup(group);
-    if (gid == (gid_t) - 1) {
-        merror_exit(USER_ERROR, "", group, strerror(errno), errno);
-    }
-
-    /* Privilege separation */
-    if (Privsep_SetGroup(gid) < 0) {
-        merror_exit(SETGID_ERROR, group, errno, strerror(errno));
-    }
+    mdebug1(WAZUH_HOMEDIR, home_path);
+    os_free(home_path);
 
     // Setup daemon
 
@@ -86,7 +83,7 @@ int main(int argc, char **argv)
     if (test_config)
         exit(EXIT_SUCCESS);
 
-    minfo("Process started.");
+    minfo(STARTUP_MSG, (int)getpid());
 
     // Run modules
 
@@ -155,11 +152,6 @@ void wm_setup()
         merror_exit(SETGID_ERROR, GROUPGLOBAL, errno, strerror(errno));
     }
 
-    // Change working directory
-
-    if (chdir(DEFAULTDIR) < 0)
-        merror_exit("chdir(): %s", strerror(errno));
-
     if (wm_check() < 0) {
         minfo("No configuration defined. Exiting...");
         exit(EXIT_SUCCESS);
@@ -205,10 +197,21 @@ void wm_cleanup()
 
 void wm_handler(int signum)
 {
+    wmodule * cur_module;
     switch (signum) {
     case SIGHUP:
     case SIGINT:
     case SIGTERM:
+        // For the moment only gracefull shutdown will be for syscollector, in the future
+        // it will be modified for all wmodules, modifying the mainloop of each thread.
+        for (cur_module = wmodules; cur_module && cur_module->context && cur_module->context->name; cur_module = cur_module->next) {
+            if (0 == strncmp(cur_module->context->name, "syscollector", strlen(cur_module->context->name))) {
+                cur_module->context->destroy(cur_module->data);
+                if (0 != pthread_join(cur_module->thread, NULL)) {
+                    mdebug2("Thread cannot be joined.");
+                }
+            }
+        }
         exit(EXIT_SUCCESS);
     default:
         merror("unknown signal (%d)", signum);

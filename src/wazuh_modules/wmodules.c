@@ -21,6 +21,28 @@ int wm_kill_timeout;        // Time for a process to quit before killing it
 int wm_debug_level;
 
 
+/**
+ * List of modules that will be initialized by default
+ * last position should be NULL
+ * */
+static const void *default_modules[] = {
+    wm_agent_upgrade_read,
+#ifndef CLIENT
+    wm_task_manager_read,
+#endif
+    NULL
+};
+
+/**
+ * Initializes the default wmodules (will be enabled even if the wodle section for that module)
+ * is not defined
+ * @param wmodules pointer to wmodules array structure
+ * @return a status flag
+ * @retval OS_SUCCESS if all reading methods are executed successfully
+ * @retval OS_INVALID if there is an error
+ * */
+static int wm_initialize_default_modules(wmodule **wmodules);
+
 // Read XML configuration and internal options
 
 int wm_config() {
@@ -33,9 +55,14 @@ int wm_config() {
     wm_max_eps = getDefine_Int("wazuh_modules", "max_eps", 1, 1000);
     wm_kill_timeout = getDefine_Int("wazuh_modules", "kill_timeout", 0, 3600);
 
+    if(wm_initialize_default_modules(&wmodules) < 0) {
+        return OS_INVALID;
+    }
+
+
     // Read configuration: ossec.conf
 
-    if (ReadConfig(CWMODULE, DEFAULTCPATH, &wmodules, &agent_cfg) < 0) {
+    if (ReadConfig(CWMODULE, OSSECCONF, &wmodules, &agent_cfg) < 0) {
         return -1;
     }
 
@@ -146,56 +173,6 @@ void wm_destroy() {
     wm_free(wmodules);
 }
 
-// Tokenize string separated by spaces, respecting double-quotes
-
-char** wm_strtok(char *string) {
-    char *c = string;
-    char **output = (char**)calloc(2, sizeof(char*));
-    size_t n = 1;
-
-    if (!output)
-        return NULL;
-
-    *output = string;
-
-    while ((c = strpbrk(c, " \"\\"))) {
-        switch (*c) {
-        case ' ':
-            *(c++) = '\0';
-            output[n++] = c;
-            output = (char**)realloc(output, (n + 1) * sizeof(char*));
-            if(!output){
-                merror_exit(MEM_ERROR, errno, strerror(errno));
-            }
-            output[n] = NULL;
-            break;
-
-        case '\"':
-            c++;
-
-            while ((c = strpbrk(c, "\"\\"))) {
-                if (*c == '\\')
-                    c += 2;
-                else
-                    break;
-            }
-
-            if (!c) {
-                free(output);
-                return NULL;
-            }
-
-            c++;
-            break;
-
-        case '\\':
-            c += 2;
-        }
-    }
-
-    return output;
-}
-
 // Load or save the running state
 
 int wm_state_io(const char * tag, int op, void *state, size_t size) {
@@ -283,6 +260,24 @@ cJSON *getModulesConfig(void) {
     return root;
 }
 
+// sync data
+int modulesSync(char* args) {
+    int ret = -1;
+    wmodule *cur_module = NULL;
+    for (cur_module = wmodules; cur_module; cur_module = cur_module->next) {
+        if (strstr(args, cur_module->context->name)) {
+            ret = 0;
+            if (strstr(args, "dbsync") && cur_module->context->sync != NULL) {
+                ret = cur_module->context->sync(args);
+            }
+            break;
+        }
+    }
+    if (ret) {
+        merror("At modulesSync(): Unable to sync module: (%d)", ret);
+    }
+    return ret;
+}
 
 cJSON *getModulesInternalOptions(void) {
 
@@ -298,7 +293,6 @@ cJSON *getModulesInternalOptions(void) {
 
     return root;
 }
-
 
 // Send message to a queue waiting for a specific delay
 int wm_sendmsg(int usec, int queue, const char *message, const char *locmsg, char loc) {
@@ -463,12 +457,27 @@ int wm_validate_command(const char *command, const char *digest, crypto_type cty
     return match;
 }
 
-#ifdef __MACH__
-void freegate(gateway *gate){
-    if(!gate){
-        return;
+static int wm_initialize_default_modules(wmodule **wmodules) {
+    wmodule *cur_wmodule = *wmodules;
+    int i=0;
+    while (default_modules[i]) {
+        if(!cur_wmodule) {
+            *wmodules = cur_wmodule = calloc(1, sizeof(wmodule));
+        } else {
+            os_calloc(1, sizeof(wmodule), cur_wmodule->next);
+            cur_wmodule = cur_wmodule->next;
+            if (!cur_wmodule) {
+                merror(MEM_ERROR, errno, strerror(errno));
+                return (OS_INVALID);
+            }
+        }
+        // Point to read function
+        int (*function_ptr)(const OS_XML *xml, xml_node **nodes, wmodule *module) = default_modules[i];
+
+        if(function_ptr(NULL, NULL, cur_wmodule) == OS_INVALID) {
+            return OS_INVALID;
+        }
+        i++;
     }
-    os_free(gate->addr);
-    os_free(gate);
+    return OS_SUCCESS;
 }
-#endif

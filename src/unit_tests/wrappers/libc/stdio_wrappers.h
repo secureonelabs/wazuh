@@ -13,17 +13,25 @@
 
 #include <stdio.h>
 
+extern fpos_t * test_position;
+
 int __wrap_fclose(FILE *_File);
+void expect_fclose(FILE *_File, int ret);
 
 int __wrap_fflush(FILE *__stream);
 
 char * __wrap_fgets (char * __s, int __n, FILE * __stream);
 
 FILE* __wrap_fopen(const char* path, const char* mode);
+void expect_fopen(const char* path, const char* mode, FILE *fp);
 
 int __wrap_fprintf (FILE *__stream, const char *__format, ...);
+void expect_fprintf(FILE *__stream, const char *formatted_msg, int ret);
 
 size_t __wrap_fread(void *ptr, size_t size, size_t n, FILE *stream);
+void expect_fread(char *file, int ret);
+
+long int __wrap_ftell(FILE *__stream);
 
 int __wrap_fseek(FILE *stream, long offset, int whence);
 
@@ -32,5 +40,17 @@ size_t __wrap_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
 int __wrap_remove(const char *filename);
 
 int __wrap_rename(const char *__old, const char *__new);
+
+size_t __wrap_strlen(const char *s);
+
+int __wrap_fgetpos (FILE *__restrict __stream, fpos_t * __pos);
+
+void __wrap_clearerr (FILE *__stream);
+
+int __wrap_fileno (FILE *__stream);
+
+int __wrap_fgetc(FILE * stream);
+
+int __wrap__fseeki64(FILE *stream, long offset, int whence);
 
 #endif

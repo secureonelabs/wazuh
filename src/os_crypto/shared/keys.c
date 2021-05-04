@@ -102,6 +102,8 @@ int OS_AddKey(keystore *keys, const char *id, const char *name, const char *ip, 
     keys->keyentries[keys->keysize]->fp = NULL;
     keys->keyentries[keys->keysize]->inode = 0;
     keys->keyentries[keys->keysize]->sock = -1;
+    keys->keyentries[keys->keysize]->updating_time = 0;
+    keys->keyentries[keys->keysize]->rids_node = NULL;
     w_mutex_init(&keys->keyentries[keys->keysize]->mutex, NULL);
 
     if (keys->flags.rehash_keys) {
@@ -142,17 +144,17 @@ int OS_CheckKeys()
 {
     FILE *fp;
 
-    if (File_DateofChange(KEYSFILE_PATH) < 0) {
-        merror(NO_AUTHFILE, KEYSFILE_PATH);
+    if (File_DateofChange(KEYS_FILE) < 0) {
+        merror(NO_AUTHFILE, KEYS_FILE);
         merror(NO_CLIENT_KEYS);
         return (0);
     }
 
-    fp = fopen(KEYSFILE_PATH, "r");
+    fp = fopen(KEYS_FILE, "r");
     if (!fp) {
         /* We can leave from here */
-        merror(FOPEN_ERROR, KEYSFILE_PATH, errno, strerror(errno));
-        merror(NO_AUTHFILE, KEYSFILE_PATH);
+        merror(FOPEN_ERROR, KEYS_FILE, errno, strerror(errno));
+        merror(NO_AUTHFILE, KEYS_FILE);
         merror(NO_CLIENT_KEYS);
         return (0);
     }
@@ -164,11 +166,11 @@ int OS_CheckKeys()
 }
 
 /* Read the authentication keys */
-void OS_ReadKeys(keystore *keys, int rehash_keys, int save_removed, int no_limit)
+void OS_ReadKeys(keystore *keys, int rehash_keys, int save_removed)
 {
     FILE *fp;
 
-    const char *keys_file = isChroot() ? KEYS_FILE : KEYSFILE_PATH;
+    const char *keys_file = KEYS_FILE;
     char buffer[OS_BUFFER_SIZE + 1];
     char name[KEYSIZE + 1];
     char ip[KEYSIZE + 1];
@@ -305,12 +307,6 @@ void OS_ReadKeys(keystore *keys, int rehash_keys, int save_removed, int no_limit
             /* Clear the memory */
             __memclear(id, name, ip, key, KEYSIZE + 1);
 
-            /* Check for maximum agent size */
-            if (!no_limit && keys->keysize > (MAX_AGENTS - 2)) {
-                merror(AG_MAX_ERROR, MAX_AGENTS - 2);
-                merror_exit(CONFIG_ERROR, keys_file);
-            }
-
             continue;
         }
 
@@ -356,6 +352,10 @@ void OS_FreeKey(keyentry *key) {
         fclose(key->fp);
     }
 
+    if (key->rids_node) {
+        free(key->rids_node);
+    }
+
     w_mutex_destroy(&key->mutex);
     free(key);
 }
@@ -398,6 +398,8 @@ void OS_FreeKeys(keystore *keys)
         keys->removed_keys_size = 0;
     }
 
+    linked_queue_free(keys->opened_fp_queue);
+
     /* Free structure */
     free(keys->keyentries);
     keys->keyentries = NULL;
@@ -426,7 +428,7 @@ void OS_UpdateKeys(keystore *keys)
     /* Read keys */
     mdebug2("OS_ReadKeys");
     minfo(ENC_READ);
-    OS_ReadKeys(keys, keys->flags.rehash_keys, keys->flags.save_removed, 0);
+    OS_ReadKeys(keys, keys->flags.rehash_keys, keys->flags.save_removed);
 
     mdebug2("OS_StartCounter");
     OS_StartCounter(keys);
@@ -555,7 +557,7 @@ int OS_WriteKeys(const keystore *keys) {
     File file;
     char cidr[20];
 
-    if (TempFile(&file, isChroot() ? AUTH_FILE : KEYSFILE_PATH, 0) < 0)
+    if (TempFile(&file, KEYS_FILE, 0) < 0)
         return -1;
 
     for (i = 0; i < keys->keysize; i++) {
@@ -571,7 +573,7 @@ int OS_WriteKeys(const keystore *keys) {
 
     fclose(file.fp);
 
-    if (OS_MoveFile(file.name, isChroot() ? AUTH_FILE : KEYSFILE_PATH) < 0) {
+    if (OS_MoveFile(file.name, KEYS_FILE) < 0) {
         free(file.name);
         return -1;
     }
@@ -666,4 +668,11 @@ int OS_DeleteSocket(keystore * keys, int sock) {
     } else {
         return -1;
     }
+}
+
+int w_get_agent_net_protocol_from_keystore(keystore * keys, const char * agent_id) {
+
+    const int key_id = OS_IsAllowedID(keys, agent_id);
+    
+    return (key_id >= 0 ? keys->keyentries[key_id]->net_protocol : key_id);
 }

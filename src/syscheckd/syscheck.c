@@ -15,13 +15,11 @@
 #include "shared.h"
 #include "syscheck.h"
 #include "rootcheck/rootcheck.h"
-#include "fim_db.h"
+#include "db/fim_db_files.h"
 
 // Global variables
 syscheck_config syscheck;
-pthread_cond_t audit_thread_started;
-pthread_cond_t audit_hc_started;
-pthread_cond_t audit_db_consistency;
+
 int sys_debug_level;
 
 #ifdef USE_MAGIC
@@ -88,6 +86,9 @@ void fim_initialize() {
     w_mutex_init(&syscheck.fim_entry_mutex, NULL);
     w_mutex_init(&syscheck.fim_scan_mutex, NULL);
     w_mutex_init(&syscheck.fim_realtime_mutex, NULL);
+#ifndef WIN32
+    w_mutex_init(&syscheck.fim_symlink_mutex, NULL)
+#endif
 }
 
 
@@ -97,11 +98,9 @@ int Start_win32_Syscheck()
 {
     int debug_level = 0;
     int r = 0;
-    char *cfg = DEFAULTCPATH;
+    char *cfg = OSSECCONF;
     /* Read internal options */
     read_internal(debug_level);
-
-    mdebug1(STARTED_MSG);
 
     /* Check if the configuration is present */
     if (File_DateofChange(cfg) < 0) {
@@ -116,7 +115,7 @@ int Start_win32_Syscheck()
         /* Disabled */
         if (!syscheck.dir) {
             minfo(FIM_DIRECTORY_NOPROVIDED);
-            dump_syscheck_entry(&syscheck, "", 0, 0, NULL, 0, NULL, NULL, -1);
+            dump_syscheck_file(&syscheck, "", 0, NULL, 0, NULL, NULL, -1);
         } else if (!syscheck.dir[0]) {
             minfo(FIM_DIRECTORY_NOPROVIDED);
         }
@@ -130,7 +129,7 @@ int Start_win32_Syscheck()
         }
 
         if (!syscheck.registry) {
-            dump_syscheck_entry(&syscheck, "", 0, 1, NULL, 0, NULL, NULL, -1);
+            dump_syscheck_registry(&syscheck, "", 0, NULL, NULL,  0, NULL, 0, -1);
         }
         os_free(syscheck.registry[0].entry);
 
@@ -164,7 +163,13 @@ int Start_win32_Syscheck()
         r = 0;
         // TODO: allow sha256 sum on registries
         while (syscheck.registry[r].entry != NULL) {
-            minfo(FIM_MONITORING_REGISTRY, syscheck.registry[r].entry, syscheck.registry[r].arch == ARCH_64BIT ? " [x64]" : "");
+            char optstr[1024];
+            minfo(FIM_MONITORING_REGISTRY, syscheck.registry[r].entry,
+                  syscheck.registry[r].arch == ARCH_64BIT ? " [x64]" : "",
+                  syscheck_opts2str(optstr, sizeof(optstr), syscheck.registry[r].opts));
+            if (syscheck.file_size_enabled){
+                minfo(FIM_DIFF_FILE_SIZE_LIMIT, syscheck.registry[r].diff_size_limit, syscheck.registry[r].entry);
+            }
             r++;
         }
 
@@ -180,8 +185,8 @@ int Start_win32_Syscheck()
             }
 
             // Print diff file size limit
-            if (syscheck.file_size_enabled) {
-                minfo(FIM_DIFF_FILE_SIZE_LIMIT, syscheck.diff_size_limit[r], syscheck.dir[r]);
+            if ((syscheck.opts[r] & CHECK_SEECHANGES) && syscheck.file_size_enabled) {
+                mdebug2(FIM_DIFF_FILE_SIZE_LIMIT, syscheck.diff_size_limit[r], syscheck.dir[r]);
             }
 
             r++;
@@ -193,7 +198,7 @@ int Start_win32_Syscheck()
 
         // Print maximum disk quota to be used by the queue\diff\local folder
         if (syscheck.disk_quota_enabled) {
-            minfo(FIM_DISK_QUOTA_LIMIT, syscheck.disk_quota_limit);
+            mdebug2(FIM_DISK_QUOTA_LIMIT, syscheck.disk_quota_limit);
         }
         else {
             minfo(FIM_DISK_QUOTA_LIMIT_DISABLED);
@@ -210,14 +215,33 @@ int Start_win32_Syscheck()
                 minfo(FIM_PRINT_IGNORE_SREGEX, "file", syscheck.ignore_regex[r]->raw);
 
         /* Print registry ignores. */
-        if(syscheck.registry_ignore)
-            for (r = 0; syscheck.registry_ignore[r].entry != NULL; r++)
-                minfo(FIM_PRINT_IGNORE_ENTRY, "registry", syscheck.registry_ignore[r].entry);
+        if(syscheck.key_ignore)
+            for (r = 0; syscheck.key_ignore[r].entry != NULL; r++)
+                minfo(FIM_PRINT_IGNORE_ENTRY, "registry", syscheck.key_ignore[r].entry);
 
         /* Print sregex registry ignores. */
-        if(syscheck.registry_ignore_regex)
-            for (r = 0; syscheck.registry_ignore_regex[r].regex != NULL; r++)
-                minfo(FIM_PRINT_IGNORE_SREGEX, "registry", syscheck.registry_ignore_regex[r].regex->raw);
+        if(syscheck.key_ignore_regex)
+            for (r = 0; syscheck.key_ignore_regex[r].regex != NULL; r++)
+                minfo(FIM_PRINT_IGNORE_SREGEX, "registry", syscheck.key_ignore_regex[r].regex->raw);
+
+        if(syscheck.value_ignore)
+            for (r = 0; syscheck.value_ignore[r].entry != NULL; r++)
+                minfo(FIM_PRINT_IGNORE_ENTRY, "value", syscheck.value_ignore[r].entry);
+
+        /* Print sregex registry ignores. */
+        if(syscheck.value_ignore_regex)
+            for (r = 0; syscheck.value_ignore_regex[r].regex != NULL; r++)
+                minfo(FIM_PRINT_IGNORE_SREGEX, "value", syscheck.value_ignore_regex[r].regex->raw);
+
+        /* Print registry values with nodiff. */
+        if(syscheck.registry_nodiff)
+            for (r = 0; syscheck.registry_nodiff[r].entry != NULL; r++)
+                minfo(FIM_NO_DIFF_REGISTRY, "registry value", syscheck.registry_nodiff[r].entry);
+
+        /* Print sregex registry values with nodiff. */
+        if(syscheck.registry_nodiff_regex)
+            for (r = 0; syscheck.registry_nodiff_regex[r].regex != NULL; r++)
+                minfo(FIM_NO_DIFF_REGISTRY, "registry sregex", syscheck.registry_nodiff_regex[r].regex->raw);
 
         /* Print files with no diff. */
         if (syscheck.nodiff){

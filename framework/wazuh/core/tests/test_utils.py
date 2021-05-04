@@ -7,44 +7,81 @@
 import os
 from collections.abc import KeysView
 from io import StringIO
-from os.path import join, exists
 from tempfile import TemporaryDirectory, NamedTemporaryFile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, mock_open
 from xml.etree import ElementTree
 
 import pytest
 
-with patch('wazuh.common.ossec_uid'):
-    with patch('wazuh.common.ossec_gid'):
+with patch('wazuh.core.common.ossec_uid'):
+    with patch('wazuh.core.common.ossec_gid'):
+        from wazuh import WazuhException
         from wazuh.core.utils import *
         from wazuh.core import exception
         from wazuh.core.agent import WazuhDBQueryAgents
+        from wazuh.core.common import wazuh_path
 
 # all necessary params
 
 test_data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')
+test_files_path = os.path.join(test_data_path, 'utils')
+wazuh_cdb_list = "172.16.19.:\n172.16.19.:\n192.168.:"
 
 # input data for testing q filter
-input_array = [{"count": 3,
-                "name": "default",
-                "mergedSum": "a7d19a28cd5591eade763e852248197b",
-                "configSum": "ab73af41699f13fdd81903b5f23d8d00"
+input_array = [
+    {
+        "count": 3,
+        "name": "default",
+        "mergedSum": "a7d19a28cd5591eade763e852248197b",
+        "configSum": "ab73af41699f13fdd81903b5f23d8d00"
+    },
+    {
+        "count": 0,
+        "name": "dmz",
+        "mergedSum": "dd77862c4a41ae1b3854d67143f3d3e4",
+        "configSum": "ab73af41699f13fdd81903b5f23d8d00"
+    },
+    {
+        "count": 0,
+        "name": "testsagentconf",
+        "mergedSum": "2acdb385658097abb9528aa5ec18c490",
+        "configSum": "297b4cea942e0b7d2d9c59f9433e3e97"
+    },
+    {
+        "count": 0,
+        "name": "testsagentconf2",
+        "mergedSum": "391ae29c1b0355c610f45bf133d5ea55",
+        "configSum": "297b4cea942e0b7d2d9c59f9433e3e97"
+    },
+    {
+        "count": 0,
+        "name": "test_nested1",
+        "mergedSum": {
+            "nestedSum1": "value"
+        },
+        "configSum": "0000000000000000000000000000000"
+    },
+    {
+        "count": 0,
+        "name": "test_nested2",
+        "mergedSum": {
+            "nestedSum1": "value"
+        },
+        "configSum": {
+            "nestedSum1": {
+                "nestedSum11": "value"
+            },
+            "nestedSum2": [
+                {
+                    "nestedSum21": "value1"
                 },
-               {"count": 0,
-                "name": "dmz",
-                "mergedSum": "dd77862c4a41ae1b3854d67143f3d3e4",
-                "configSum": "ab73af41699f13fdd81903b5f23d8d00"
-                },
-               {"count": 0,
-                "name": "testsagentconf",
-                "mergedSum": "2acdb385658097abb9528aa5ec18c490",
-                "configSum": "297b4cea942e0b7d2d9c59f9433e3e97"
-                },
-               {"count": 0,
-                "name": "testsagentconf2",
-                "mergedSum": "391ae29c1b0355c610f45bf133d5ea55",
-                "configSum": "297b4cea942e0b7d2d9c59f9433e3e97"
-                }]
+                {
+                    "nestedSum21": "value2"
+                }
+
+            ]
+        }
+    }]
 
 
 # MOCK DATA
@@ -325,6 +362,33 @@ def test_chown_r(mock_chown):
         mock_chown.assert_any_call(path.join(tmp_dirname, tmp_file.name), 'test_user', 'test_group')
 
 
+@patch('wazuh.core.utils.common.wazuh_path', new='/test/path')
+@patch('wazuh.core.utils.path.exists', return_value=True)
+@patch('wazuh.core.utils.remove')
+def test_delete_wazuh_file(mock_remove, mock_exists):
+    """Check delete_file calls functions with expected params"""
+    assert delete_wazuh_file('/test/path/etc/file')
+    mock_remove.assert_called_once_with('/test/path/etc/file')
+
+
+@patch('wazuh.core.utils.common.wazuh_path', new='/test/path')
+def test_delete_wazuh_file_ko():
+    """Check delete_file calls functions with expected params"""
+    with pytest.raises(WazuhError, match=r'\b1907\b'):
+        delete_wazuh_file('/test/different_path/etc/file')
+
+    with pytest.raises(WazuhError, match=r'\b1907\b'):
+        delete_wazuh_file('/test/path/file/../../home')
+
+    with patch('wazuh.core.utils.path.exists', return_value=False):
+        with pytest.raises(WazuhError, match=r'\b1906\b'):
+            delete_wazuh_file('/test/path/etc/file')
+
+    with patch('wazuh.core.utils.path.exists', return_value=True):
+        with pytest.raises(WazuhError, match=r'\b1907\b'):
+            delete_wazuh_file('/test/path/etc/file')
+
+
 @pytest.mark.parametrize('ownership, time, permissions',
                          [((1000, 1000), None, None),
                           ((1000, 1000), (12345, 12345), None),
@@ -340,7 +404,7 @@ def test_safe_move(mock_utime, mock_chmod, mock_chown, ownership, time, permissi
         tmp_file = NamedTemporaryFile(dir=tmpdirname, delete=False)
         target_file = join(tmpdirname, 'target')
         safe_move(tmp_file.name, target_file, ownership=ownership, time=time, permissions=permissions)
-        assert (exists(target_file))
+        assert (os.path.exists(target_file))
         mock_chown.assert_called_once_with(target_file, *ownership)
         if time is not None:
             mock_utime.assert_called_once_with(target_file, time)
@@ -358,7 +422,7 @@ def test_safe_move_exception(mock_utime, mock_chmod, mock_chown):
         target_file = join(tmpdirname, 'target')
         with patch('wazuh.core.utils.rename', side_effect=OSError(1)):
             safe_move(tmp_file.name, target_file, ownership=(1000, 1000), time=(12345, 12345), permissions=0o660)
-        assert (exists(target_file))
+        assert (os.path.exists(target_file))
 
 
 @pytest.mark.parametrize('dir_name, path_exists', [
@@ -879,12 +943,11 @@ def test_WazuhDBQuery_parse_filters(mock_query, mock_filter, mock_socket_conn, m
 
 
 @pytest.mark.parametrize('field_name, field_filter, q_filter', [
-    ('status', None, None),
+    ('status', 'field', {'value': 'active', 'operator': 'LIKE', 'field': 'status$0'}),
     ('date1', None, {'value': '1', 'operator': None}),
     ('os.name', 'field', {'value': '2019-07-16 09:21:56', 'operator': 'LIKE', 'field': 'status$0'}),
     ('os.name', None, {'value': None, 'operator': 'LIKE', 'field': 'status$0'}),
-    ('os.name', 'field', {'value': '2019-07-16 09:21:56', 'operator': 'LIKE', 'field': 'status$0'}),
-
+    ('os.name', 'field', {'value': '2019-07-16 09:21:56', 'operator': 'LIKE', 'field': 'status$0'})
 ])
 @patch('wazuh.core.utils.glob.glob', return_value=True)
 @patch('wazuh.core.utils.WazuhDBBackend.connect_to_db')
@@ -897,7 +960,7 @@ def test_WazuhDBQuery_protected_process_filter(mock_date, mock_status, mock_sock
     """Tests WazuhDBQuery._process_filter."""
     query = WazuhDBQuery(offset=0, limit=1, table='agent', sort=None,
                          search=None, select=None,
-                         fields={'os.name': 'ubuntu', 'os.version': '18.04'},
+                         fields={'os.name': 'ubuntu', 'os.version': '18.04', 'status': 'active'},
                          default_sort_field=None, query=None,
                          backend=WazuhDBBackend(agent_id=0), count=5,
                          get_data=None, date_fields=['date1', 'date2'])
@@ -905,9 +968,7 @@ def test_WazuhDBQuery_protected_process_filter(mock_date, mock_status, mock_sock
     query._process_filter(field_name, field_filter, q_filter)
 
     mock_conn_db.assert_called_once_with()
-    if field_name == 'status':
-        mock_status.assert_any_call(q_filter)
-    elif field_name in ['date1', 'date2']:
+    if field_name in ['date1', 'date2']:
         mock_date.assert_any_call(q_filter, field_name)
 
 
@@ -1394,23 +1455,27 @@ def test_WazuhDBQueryGroupBy_protected_add_select_to_query(mock_parse, mock_add,
     ('count!=0', 1),
     ('name~test;mergedSum~2acdb,name=dmz', 2),
     ('name=dmz,name=default', 2),
-    ('name~test', 2),
-    ('count<3;name~test', 2),
-    ('name~d', 2),
-    ('name!=dmz;name!=default', 2),
-    ('count=0;name!=dmz', 2),
-    ('count=0', 3),
-    ('count<3', 3),
-    ('count<1', 3),
-    ('count!=3', 3),
-    ('count>10,count<3', 3),
+    ('name~test', 4),
+    ('count<3;name~test', 4),
+    ('name~d', 4),
+    ('name!=dmz;name!=default', 4),
+    ('count=0;name!=dmz', 4),
+    ('count=0', 5),
+    ('count<3', 5),
+    ('count<1', 5),
+    ('count!=3', 5),
+    ('count>10,count<3', 5),
     ('configSum~29,count=3', 3),
-    ('name~test,count>0', 3),
-    ('count<4', 4),
-    ('count>0,count<4', 4),
-    ('name~def,count=0', 4),
+    ('name~test,count>0', 5),
+    ('count<4', 6),
+    ('count>0,count<4', 6),
+    ('name~def,count=0', 6),
     ('configSum~29,configSum~ab', 4),
-    ('nameGfirewall', -1)
+    ('nameGfirewall', -1),
+    ('mergedSum.nestedSum1=value', 2),
+    ('configSum.nestedSum1.nestedSum11=value', 1),
+    ('configSum.nestedSum2.nestedSum21=value1', 1),
+    ('configSum.nestedSum2.nestedSum21=value2', 1)
 ])
 def test_filter_array_by_query(q, return_length):
     """Test filter by query in an array."""
@@ -1475,15 +1540,106 @@ def test_select_array(select, required_fields, expected_result):
     except WazuhError as e:
         assert e.code == 1724
 
-@patch('wazuh.common.ossec_path', new='/var/ossec')
-@patch('wazuh.core.utils.glob.glob')
-def test_get_files(mock_glob):
-    """Test whether get_files() returns expected paths."""
-    mock_glob.return_value = ['/var/ossec/etc/rules/test.yml',
-                              '/var/ossec/etc/rules/test.xml',
-                              '/var/ossec/etc/decoders/test.cdb',
-                              '/var/ossec/etc/lists/test.yml.disabled']
-    result = get_files()
 
-    assert 'etc/ossec.conf' in result
-    assert all('/var/ossec' not in x for x in result)
+@pytest.mark.parametrize('detail, value, attribs, details', [
+    ('new', '4', {'attrib': 'attrib_value'}, {'actual': '3'}),
+    ('actual', '4', {'new_attrib': 'attrib_value', 'new_attrib2': 'whatever'}, {'actual': {'pattern': '3'}}),
+])
+def test_add_dynamic_detail(detail, value, attribs, details):
+    """Test add_dynamic_detail core rule function."""
+    add_dynamic_detail(detail, value, attribs, details)
+    assert detail in details.keys()
+    if detail == next(iter(details.keys())):
+        assert details[detail]['pattern'].endswith(value)
+    else:
+        assert details[detail]['pattern'] == value
+    for key, value in attribs.items():
+        assert details[detail][key] == value
+
+
+@patch('wazuh.core.utils.check_remote_commands')
+@patch('wazuh.core.manager.common.wazuh_path', new=test_files_path)
+def test_validate_wazuh_xml(mock_remote_commands):
+    """Test validate_wazuh_xml method works and methods inside are called with expected parameters"""
+
+    with open(os.path.join(test_files_path, 'test_rules.xml')) as f:
+        xml_file = f.read()
+
+    m = mock_open(read_data=xml_file)
+
+    with patch('builtins.open', m):
+        validate_wazuh_xml(xml_file)
+    mock_remote_commands.assert_not_called()
+
+    with patch('builtins.open', m):
+        validate_wazuh_xml(xml_file, config_file=True)
+    mock_remote_commands.assert_called_once()
+
+
+@pytest.mark.parametrize('effect, expected_exception', [
+    (ExpatError, 1113)
+])
+def test_validate_wazuh_xml_ko(effect, expected_exception):
+    """Tests validate_wazuh_xml function works when open function raises an exception.
+    Parameters
+    ----------
+    effect : Exception
+        Exception to be triggered.
+    expected_exception
+        Expected code when triggering the exception.
+    """
+    input_file = os.path.join(test_files_path, 'test_rules.xml')
+
+    with patch('wazuh.core.utils.load_wazuh_xml', side_effect=effect):
+        with pytest.raises(WazuhException, match=f'.* {expected_exception} .*'):
+            validate_wazuh_xml(input_file)
+
+
+@patch('wazuh.core.utils.copyfile')
+def test_delete_file_with_backup(mock_copyfile):
+    """Test delete_file_with_backup function."""
+    backup_file = 'backup'
+    abs_path = 'testing/dir/subdir/file'
+    delete_function = MagicMock()
+
+    delete_file_with_backup(backup_file, abs_path, delete_function)
+
+    mock_copyfile.assert_called_with(abs_path, backup_file)
+    delete_function.assert_called_once_with(filename=basename(abs_path))
+
+
+@patch('wazuh.core.utils.copyfile', side_effect=IOError)
+def test_delete_file_with_backup_ko(mock_copyfile):
+    """Test delete_file_with_backup function exceptions."""
+    with pytest.raises(WazuhError, match='.* 1019 .*'):
+        delete_file_with_backup('test', 'test', str)
+
+
+def test_to_relative_path():
+    """Test to_relative_path function."""
+    path = 'etc/ossec.conf'
+    assert to_relative_path(join(wazuh_path, path)) == path
+
+    assert to_relative_path(path, prefix='etc') == basename(path)
+
+
+@patch('wazuh.core.utils.common.ruleset_rules_path', new=test_files_path)
+@patch('wazuh.core.utils.common.user_rules_path', new=test_files_path)
+def test_expand_rules():
+    rules = expand_rules()
+    assert rules == set(map(os.path.basename, glob.glob(os.path.join(test_files_path, f'*{common.RULES_EXTENSION}'))))
+
+
+@patch('wazuh.core.utils.common.ruleset_decoders_path', new=test_files_path)
+@patch('wazuh.core.utils.common.user_decoders_path', new=test_files_path)
+def test_expand_decoders():
+    decoders = expand_decoders()
+    assert decoders == set(map(os.path.basename, glob.glob(os.path.join(test_files_path, f'*{common.DECODERS_EXTENSION}'))))
+
+
+@patch('wazuh.core.utils.common.ruleset_lists_path', new=test_files_path)
+@patch('wazuh.core.utils.common.user_lists_path', new=test_files_path)
+def test_expand_lists():
+    lists = expand_lists()
+    assert lists == set(filter(lambda x: len(x.split('.')) == 1, map(os.path.basename, glob.glob(os.path.join(
+        test_files_path, f'*{common.LISTS_EXTENSION}')))))

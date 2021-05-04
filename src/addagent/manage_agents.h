@@ -18,7 +18,7 @@
 char *read_from_user(void);
 
 /* Add or remove an agent */
-int add_agent(int json_output, int no_limit);
+int add_agent(int json_output);
 int remove_agent(int json_output);
 
 /* Extract or import a key */
@@ -29,8 +29,8 @@ int k_bulkload(const char *cmdbulk);
 /**
  * @brief Converts invalid hostnames to valid by eliminating
  * invalid characters
- * 
- * @param u_name name to be converted 
+ *
+ * @param u_name name to be converted
  * */
 void OS_ConvertToValidAgentName(char *u_name);
 
@@ -56,9 +56,6 @@ int list_agents(int cmdlist);
 
 /* Clear a line */
 char *chomp(char *str);
-
-/* Checks if the agent limit has been reached */
-int limitReached();
 
 /* Shared variables */
 extern time_t time1;

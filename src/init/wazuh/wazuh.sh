@@ -128,4 +128,81 @@ WazuhUpgrade()
 
     rm -f $DIRECTORY/wodles/cve.db
     rm -f $DIRECTORY/queue/vulnerabilities/cve.db
+
+    # Migrate .agent_info and .wait files before removing deprecated socket folder
+
+    if [ -d $DIRECTORY/queue/ossec ]; then
+        if [ -f $DIRECTORY/queue/ossec/.agent_info ]; then
+            mv -f $DIRECTORY/queue/ossec/.agent_info $DIRECTORY/queue/sockets/.agent_info
+        fi
+        if [ -f $DIRECTORY/queue/ossec/.wait ]; then
+            mv -f $DIRECTORY/queue/ossec/.wait $DIRECTORY/queue/sockets/.wait
+        fi
+        rm -rf $DIRECTORY/queue/ossec
+    fi
+
+    # Move rotated logs to new folder and remove the existing one
+
+    if [ -d $DIRECTORY/logs/ossec ]; then
+        if [ "$(ls -A $DIRECTORY/logs/ossec)" ]; then
+            mv -f $DIRECTORY/logs/ossec/* $DIRECTORY/logs/wazuh
+        fi
+        rm -rf $DIRECTORY/logs/ossec
+    fi
+
+    # Remove deprecated Wazuh tools
+
+    rm -f $DIRECTORY/bin/ossec-control
+    rm -f $DIRECTORY/bin/ossec-regex
+    rm -f $DIRECTORY/bin/ossec-logtest
+    rm -f $DIRECTORY/bin/ossec-makelists
+    rm -f $DIRECTORY/bin/util.sh
+    rm -f $DIRECTORY/bin/rootcheck_control
+    rm -f $DIRECTORY/bin/syscheck_control
+    rm -f $DIRECTORY/bin/syscheck_update
+
+    # Remove old Wazuh daemons
+
+    rm -f $DIRECTORY/bin/ossec-agentd
+    rm -f $DIRECTORY/bin/ossec-agentlessd
+    rm -f $DIRECTORY/bin/ossec-analysisd
+    rm -f $DIRECTORY/bin/ossec-authd
+    rm -f $DIRECTORY/bin/ossec-csyslogd
+    rm -f $DIRECTORY/bin/ossec-dbd
+    rm -f $DIRECTORY/bin/ossec-execd
+    rm -f $DIRECTORY/bin/ossec-integratord
+    rm -f $DIRECTORY/bin/ossec-logcollector
+    rm -f $DIRECTORY/bin/ossec-maild
+    rm -f $DIRECTORY/bin/ossec-monitord
+    rm -f $DIRECTORY/bin/ossec-remoted
+    rm -f $DIRECTORY/bin/ossec-reportd
+    rm -f $DIRECTORY/bin/ossec-syscheckd
+
+    # Remove existing ruleset version file
+
+    rm -f $DIRECTORY/ruleset/VERSION
+
+    # Remove old Active Response scripts
+
+    rm -f $DIRECTORY/active-response/bin/firewall-drop.sh
+    rm -f $DIRECTORY/active-response/bin/default-firewall-drop.sh
+    rm -f $DIRECTORY/active-response/bin/pf.sh
+    rm -f $DIRECTORY/active-response/bin/npf.sh
+    rm -f $DIRECTORY/active-response/bin/ipfw.sh
+    rm -f $DIRECTORY/active-response/bin/ipfw_mac.sh
+    rm -f $DIRECTORY/active-response/bin/firewalld-drop.sh
+    rm -f $DIRECTORY/active-response/bin/disable-account.sh
+    rm -f $DIRECTORY/active-response/bin/host-deny.sh
+    rm -f $DIRECTORY/active-response/bin/ip-customblock.sh
+    rm -f $DIRECTORY/active-response/bin/restart-ossec.sh
+    rm -f $DIRECTORY/active-response/bin/route-null.sh
+    rm -f $DIRECTORY/active-response/bin/kaspersky.sh
+    rm -f $DIRECTORY/active-response/bin/ossec-slack.sh
+    rm -f $DIRECTORY/active-response/bin/ossec-tweeter.sh
+
+    # Remove deprecated ossec-init.conf file and its link
+    if [ -f /etc/ossec-init.conf ]; then
+        rm -f $DIRECTORY/etc/ossec-init.conf
+        rm -f /etc/ossec-init.conf
+    fi
 }

@@ -229,6 +229,18 @@ char* Eventinfo_to_jsonstr(const Eventinfo* lf, bool force_full_log)
             cJSON_AddStringToObject(file_diff, "symbolic_path", lf->sym_path);
         }
 
+        if (lf->fields[FIM_REGISTRY_ARCH].value) {
+            cJSON_AddStringToObject(file_diff, "arch", lf->fields[FIM_REGISTRY_ARCH].value);
+        }
+
+        if (lf->fields[FIM_REGISTRY_VALUE_NAME].value) {
+            cJSON_AddStringToObject(file_diff, "value_name", lf->fields[FIM_REGISTRY_VALUE_NAME].value);
+        }
+
+        if (lf->fields[FIM_REGISTRY_VALUE_TYPE].value) {
+            cJSON_AddStringToObject(file_diff, "value_type", lf->fields[FIM_REGISTRY_VALUE_TYPE].value);
+        }
+
         if (print_before_field(lf->size_before, lf->fields[FIM_SIZE].value)) {
             cJSON_AddStringToObject(file_diff, "size_before", lf->size_before);
         }
@@ -406,9 +418,6 @@ char* Eventinfo_to_jsonstr(const Eventinfo* lf, bool force_full_log)
     if(lf->status)
         cJSON_AddStringToObject(data, "status", lf->status);
 
-    if(lf->command)
-        cJSON_AddStringToObject(root, "command", lf->command);
-
     if(lf->url)
         cJSON_AddStringToObject(data, "url", lf->url);
 
@@ -483,7 +492,7 @@ char* Eventinfo_to_jsonstr(const Eventinfo* lf, bool force_full_log)
         // Dynamic fields, except for syscheck events
         if (lf->fields && !lf->filename) {
             for (i = 0; i < lf->nfields; i++) {
-                if (lf->fields[i].value && *lf->fields[i].value) {
+                if (lf->fields[i].value != NULL && *lf->fields[i].value != '\0') {
                     W_JSON_AddField(data, lf->fields[i].key, lf->fields[i].value);
                 }
             }

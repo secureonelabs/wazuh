@@ -11,7 +11,7 @@
 #include "shared.h"
 #include "remoted.h"
 #include "remoted_op.h"
-#include "wazuh_db/wdb.h"
+#include "wazuh_db/helpers/wdb_global_helpers.h"
 #include "os_crypto/md5/md5_op.h"
 #include "os_net/os_net.h"
 #include "shared_download.h"
@@ -60,15 +60,12 @@ int INTERVAL;
 int should_clean;
 
 /* For the last message tracking */
-static char pending_queue[MAX_AGENTS][9];
-static volatile int queue_i = 0;
-static volatile int queue_j = 0;
+static w_linked_queue_t *pending_queue;
 OSHash *pending_data;
 
 /* pthread mutex variables */
 static pthread_mutex_t lastmsg_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t files_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t awake_mutex = PTHREAD_COND_INITIALIZER;
 
 /* Hash table for multigroups */
 OSHash *m_hash;
@@ -98,7 +95,9 @@ void save_controlmsg(const keyentry * key, char *r_msg, size_t msg_length, int *
     const char * agent_ip_label = "#\"_agent_ip\":";
     const char * manager_label = "#\"_manager_hostname\":";
     const char * node_label = "#\"_node_name\":";
+    const char * version_label = "#\"_wazuh_version\":";
     int is_startup = 0;
+    int is_shutdown = 0;
     int agent_id = 0;
     int result = 0;
 
@@ -129,6 +128,9 @@ void save_controlmsg(const keyentry * key, char *r_msg, size_t msg_length, int *
     if (strcmp(r_msg, HC_STARTUP) == 0) {
         mdebug1("Agent %s sent HC_STARTUP from %s.", key->name, inet_ntoa(key->peer_info.sin_addr));
         is_startup = 1;
+    } else if (strcmp(r_msg, HC_SHUTDOWN) == 0) {
+        mdebug1("Agent %s sent HC_SHUTDOWN from %s.", key->name, inet_ntoa(key->peer_info.sin_addr));
+        is_shutdown = 1;
     } else {
         /* Clean msg and shared files (remove random string) */
         msg = r_msg;
@@ -145,7 +147,7 @@ void save_controlmsg(const keyentry * key, char *r_msg, size_t msg_length, int *
     }
 
     /* Lock mutex */
-    w_mutex_lock(&lastmsg_mutex)
+    w_mutex_lock(&lastmsg_mutex);
 
     /* Check if there is a keep alive already for this agent */
     if (data = OSHash_Get(pending_data, key->id), data && data->changed && data->message && msg && strcmp(data->message, msg) == 0) {
@@ -153,10 +155,11 @@ void save_controlmsg(const keyentry * key, char *r_msg, size_t msg_length, int *
 
         agent_id = atoi(key->id);
 
-        result = wdb_update_agent_keepalive(agent_id, logr.worker_node?"syncreq":"synced", wdb_sock);
+        result = wdb_update_agent_keepalive(agent_id, AGENT_CS_ACTIVE, logr.worker_node?"syncreq":"synced", wdb_sock);
 
-        if (OS_SUCCESS != result)
-            mwarn("Unable to save agent last keepalive in global.db");
+        if (OS_SUCCESS != result) {
+            mwarn("Unable to save last keepalive and set connection status as active for agent: %s", key->id);
+        }
     } else {
         if (!data) {
             os_calloc(1, sizeof(pending_data_t), data);
@@ -178,10 +181,47 @@ void save_controlmsg(const keyentry * key, char *r_msg, size_t msg_length, int *
             w_mutex_unlock(&lastmsg_mutex);
             agent_id = atoi(key->id);
 
-            if (OS_SUCCESS != wdb_update_agent_keepalive(agent_id, logr.worker_node?"syncreq":"synced", wdb_sock)) {
-                mwarn("Unable to set last keepalive as pending");
+            result = wdb_update_agent_connection_status(agent_id, AGENT_CS_PENDING, logr.worker_node?"syncreq":"synced", wdb_sock);
+
+            if (OS_SUCCESS != result) {
+                mwarn("Unable to set connection status as pending for agent: %s", key->id);
             }
-        } else {
+        } else if (is_shutdown) {
+            /* Unlock mutex */
+            w_mutex_unlock(&lastmsg_mutex);
+            agent_id = atoi(key->id);
+
+            result = wdb_update_agent_connection_status(agent_id, AGENT_CS_DISCONNECTED, logr.worker_node?"syncreq":"synced", wdb_sock);
+
+            if (OS_SUCCESS != result) {
+                mwarn("Unable to set connection status as disconnected for agent: %s", key->id);
+            } else {
+                /* Generate alert */
+                char srcmsg[OS_SIZE_256];
+                char msg[OS_SIZE_1024];
+
+                memset(srcmsg, '\0', OS_SIZE_256);
+                memset(msg, '\0', OS_SIZE_1024);
+
+                snprintf(srcmsg, OS_SIZE_256, "[%s] (%s) %s", key->id, key->name, key->ip->ip);
+                snprintf(msg, OS_SIZE_1024, AG_STOP_MSG, key->name, key->ip->ip);
+
+                /* Send stopped message */
+                if (SendMSG(logr.m_queue, msg, srcmsg, SECURE_MQ) < 0) {
+                    merror(QUEUE_ERROR, DEFAULTQUEUE, strerror(errno));
+
+                    // Try to reconnect infinitely
+                    logr.m_queue = StartMQ(DEFAULTQUEUE, WRITE, INFINITE_OPENQ_ATTEMPTS);
+
+                    minfo("Successfully reconnected to '%s'", DEFAULTQUEUE);
+
+                    if (SendMSG(logr.m_queue, msg, srcmsg, SECURE_MQ) < 0) {
+                        // Something went wrong sending a message after an immediate reconnection...
+                        merror(QUEUE_ERROR, DEFAULTQUEUE, strerror(errno));
+                    }
+                }
+            }
+         } else {
             /* Update message */
             mdebug2("save_controlmsg(): inserting '%s'", msg);
             os_free(data->message);
@@ -189,17 +229,11 @@ void save_controlmsg(const keyentry * key, char *r_msg, size_t msg_length, int *
 
             /* Mark data as changed and insert into queue */
             if (!data->changed) {
-                if (full(queue_i, queue_j)) {
-                    merror("Pending message queue full.");
-                } else {
-                    strncpy(pending_queue[queue_i], key->id, 8);
-                    forward(queue_i);
+                char *id;
+                os_strdup(key->id, id);
+                linked_queue_push_ex(pending_queue, id);
 
-                    /* Signal that new data is available */
-                    w_cond_signal(&awake_mutex);
-
-                    data->changed = 1;
-                }
+                data->changed = 1;
             }
 
             /* Unlock mutex */
@@ -236,7 +270,13 @@ void save_controlmsg(const keyentry * key, char *r_msg, size_t msg_length, int *
                 os_strdup(node_name, agent_data->node_name);
             }
 
+            if (agent_data->version) {
+                wm_strcat(&agent_data->labels, version_label, agent_data->labels ? '\n' : 0);
+                wm_strcat(&agent_data->labels, agent_data->version, 0);
+            }
+
             agent_data->id = atoi(key->id);
+            os_strdup(AGENT_CS_ACTIVE, agent_data->connection_status);
             os_strdup(logr.worker_node ? "syncreq" : "synced", agent_data->sync_status);
 
             // Updating version and keepalive in global.db
@@ -897,6 +937,7 @@ int send_file_toagent(const char *agent_id, const char *group, const char *name,
     FILE *fp;
     os_sha256 multi_group_hash;
     char *multi_group_hash_pt = NULL;
+    int protocol = -1; // Agent client net protocol
 
     /* Check if it is multigroup */
     if (strchr(group,MULTIGROUP_SEPARATOR)) {
@@ -933,6 +974,15 @@ int send_file_toagent(const char *agent_id, const char *group, const char *name,
         return (-1);
     }
 
+    /* The following code is used to get the protocol that the client is using in order to answer accordingly */
+    key_lock_read();
+    protocol = w_get_agent_net_protocol_from_keystore(&keys, agent_id);
+    key_unlock();
+    if (protocol < 0) {
+        merror(AR_NOAGENT_ERROR, agent_id);
+        return -1;
+    }
+
     /* Send the file contents */
     while ((n = fread(buf, 1, 900, fp)) > 0) {
         buf[n] = '\0';
@@ -941,8 +991,8 @@ int send_file_toagent(const char *agent_id, const char *group, const char *name,
             fclose(fp);
             return (-1);
         }
-
-        if (logr.proto[logr.position] == IPPROTO_UDP) {
+        /* If the protocol being used is UDP, it is necessary to add a delay to avoid flooding */
+        if (protocol == REMOTED_NET_PROTOCOL_UDP) {
             /* Sleep 1 every 30 messages -- no flood */
             if (i > 30) {
                 sleep(1);
@@ -1161,38 +1211,35 @@ static void read_controlmsg(const char *agent_id, char *msg)
  */
 void *wait_for_msgs(__attribute__((unused)) void *none)
 {
-    char agent_id[9];
     pending_data_t *data;
 
     /* Should never leave this loop */
     while (1) {
         char * msg = NULL;
 
+        /* Pop data from queue */
+        char *agent_id = linked_queue_pop_ex(pending_queue);
+
         /* Lock mutex */
         w_mutex_lock(&lastmsg_mutex);
 
-        /* If no agent changed, wait for signal */
-        while (empty(queue_i, queue_j)) {
-            w_cond_wait(&awake_mutex, &lastmsg_mutex);
-        }
-
-        /* Pop data from queue */
-        if ((data = OSHash_Get(pending_data, pending_queue[queue_j]))) {
-            strncpy(agent_id, pending_queue[queue_j], 8);
+        if (data = OSHash_Get(pending_data, agent_id), data) {
             os_strdup(data->message, msg);
         } else {
-            merror("Couldn't get pending data from hash table for agent ID '%s'.", pending_queue[queue_j]);
-            *agent_id = '\0';
+            merror("Couldn't get pending data from hash table for agent ID '%s'.", agent_id);
+            os_free(agent_id);
+            agent_id = NULL;
         }
 
-        forward(queue_j);
 
         /* Unlock mutex */
         w_mutex_unlock(&lastmsg_mutex);
 
-        if (msg && *agent_id) {
+        if (msg && agent_id) {
             read_controlmsg(agent_id, msg);
         }
+        os_free(agent_id);
+        os_free(msg);
 
         // Mark message as dispatched
         w_mutex_lock(&lastmsg_mutex);
@@ -1200,8 +1247,6 @@ void *wait_for_msgs(__attribute__((unused)) void *none)
             data->changed = 0;
         }
         w_mutex_unlock(&lastmsg_mutex);
-
-        free(msg);
     }
 
     return (NULL);
@@ -1347,10 +1392,14 @@ void manager_init()
     mdebug1("Running manager_init");
     c_files();
     w_yaml_create_groups();
-    memset(pending_queue, 0, MAX_AGENTS * 9);
+    pending_queue = linked_queue_init();
     pending_data = OSHash_Create();
 
     if (!m_hash || !pending_data) merror_exit("At manager_init(): OSHash_Create() failed");
 
     OSHash_SetFreeDataPointer(pending_data, (void (*)(void *))free_pending_data);
+}
+
+void manager_free() {
+    linked_queue_free(pending_queue);
 }

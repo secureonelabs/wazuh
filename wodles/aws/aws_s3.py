@@ -23,11 +23,11 @@
 #   13 - Unexpected error sending message to Wazuh
 #   14 - Empty bucket
 
-import signal
-import sys
-import sqlite3
 import argparse
+import signal
 import socket
+import sqlite3
+import sys
 
 try:
     import boto3
@@ -47,6 +47,7 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from time import mktime
+from wazuh.core import common
 
 # Python 2/3 compatibility
 if sys.version_info[0] == 3:
@@ -138,13 +139,9 @@ class WazuhIntegration:
                             DROP TABLE {table};
                             """
 
-        # get path and version from ossec.init.conf
-        with open('/etc/ossec-init.conf') as f:
-            lines = f.readlines()
-            re_ossec_init = re.compile(r'^([A-Z]+)={1}"{1}([\w\/.]+)"{1}$')
-            self.wazuh_path = re.search(re_ossec_init, lines[0]).group(2)
-            self.wazuh_version = re.search(re_ossec_init, lines[2]).group(2)
-        self.wazuh_queue = '{0}/queue/ossec/queue'.format(self.wazuh_path)
+        self.wazuh_path = common.find_wazuh_path()
+        self.wazuh_version = common.get_wazuh_version()
+        self.wazuh_queue = '{0}/queue/sockets/queue'.format(self.wazuh_path)
         self.wazuh_wodle = '{0}/wodles/aws'.format(self.wazuh_path)
         self.msg_header = "1:Wazuh-AWS:"
         # GovCloud regions
@@ -248,7 +245,7 @@ class WazuhIntegration:
                                             aws_session_token=sts_role_assumption['Credentials']['SessionToken'],
                                             region_name=conn_args.get('region_name')
                                             )
-                client = sts_session.client(service_name=service_name)
+                client = sts_session.client(service_name='logs' if service_name == 'cloudwatchlogs' else service_name)
             elif service_name == 'cloudwatchlogs':
                 client = boto3.client('logs', region_name=region,
                                       aws_access_key_id=access_key, aws_secret_access_key=secret_key)
@@ -1159,6 +1156,12 @@ class AWSConfigBucket(AWSLogsBucket):
         if 'configuration' in event['aws']:
             configuration = event['aws']['configuration']
 
+            # Remove unnecessary fields to avoid performance issues
+            for key in configuration:
+                if type(configuration[key]) is dict and "Content" in configuration[key]:
+                    content_list = list(configuration[key]["Content"].keys())
+                    configuration[key]["Content"] = content_list
+
             if 'securityGroups' in configuration:
                 security_groups = configuration['securityGroups']
                 if isinstance(security_groups, unicode):
@@ -2029,6 +2032,64 @@ class AWSWAFBucket(AWSCustomBucket):
         return json.loads(json.dumps(content))
 
 
+class AWSALBBucket(AWSCustomBucket):
+
+    def __init__(self, **kwargs):
+        db_table_name = 'alb'
+        AWSCustomBucket.__init__(self, db_table_name, **kwargs)
+
+    def load_information_from_file(self, log_key):
+        """Load data from a ALB access log file."""
+        with self.decompress_file(log_key=log_key) as f:
+            fieldnames = (
+                "type", "time", "elb", "client_port", "target_port", "request_processing_time",
+                "target_processing_time", "response_processing_time", "elb_status_code", "target_status_code",
+                "received_bytes", "sent_bytes", "request", "user_agent", "ssl_cipher", "ssl_protocol",
+                "target_group_arn", "trace_id", "domain_name", "chosen_cert_arn", "matched_rule_priority",
+                "request_creation_time", "action_executed", "redirect_url", "error_reason", "target_port_list",
+                "target_status_code_list", "classification", "classification_reason")
+            tsv_file = csv.DictReader(f, fieldnames=fieldnames, delimiter=' ')
+
+            return [dict(x, source='alb') for x in tsv_file]
+
+
+class AWSCLBBucket(AWSCustomBucket):
+
+    def __init__(self, **kwargs):
+        db_table_name = 'clb'
+        AWSCustomBucket.__init__(self, db_table_name, **kwargs)
+
+    def load_information_from_file(self, log_key):
+        """Load data from a CLB access log file."""
+        with self.decompress_file(log_key=log_key) as f:
+            fieldnames = (
+                "time", "elb", "client_port", "backend_port", "request_processing_time", "backend_processing_time",
+                "response_processing_time", "elb_status_code", "backend_status_code", "received_bytes", "sent_bytes",
+                "request", "user_agent", "ssl_cipher", "ssl_protocol")
+            tsv_file = csv.DictReader(f, fieldnames=fieldnames, delimiter=' ')
+
+            return [dict(x, source='clb') for x in tsv_file]
+
+
+class AWSNLBBucket(AWSCustomBucket):
+
+    def __init__(self, **kwargs):
+        db_table_name = 'nlb'
+        AWSCustomBucket.__init__(self, db_table_name, **kwargs)
+
+    def load_information_from_file(self, log_key):
+        """Load data from a NLB access log file."""
+        with self.decompress_file(log_key=log_key) as f:
+            fieldnames = (
+                "type", "version", "time", "elb", "listener", "client_port", "destination_port", "connection_time",
+                "tls_handshake_time", "received_bytes", "sent_bytes", "incoming_tls_alert", "chosen_cert_arn",
+                "chosen_cert_serial", "tls_cipher", "tls_protocol_version", "tls_named_group", "domain_name",
+                "alpn_fe_protocol", "alpn_client_preference_list")
+            tsv_file = csv.DictReader(f, fieldnames=fieldnames, delimiter=' ')
+
+            return [dict(x, source='nlb') for x in tsv_file]
+
+
 class AWSService(WazuhIntegration):
     """
     Class for getting AWS Services logs from API calls
@@ -2137,7 +2198,7 @@ class AWSInspector(AWSService):
     Class for getting AWS Inspector logs
     :param access_key: AWS access key id
     :param secret_key: AWS secret access key
-    :param profile: AWS profile
+    :param aws_profile: AWS profile
     :param iam_role_arn: IAM Role
     :param only_logs_after: Date after which obtain logs.
     :param region: Region of service
@@ -2268,7 +2329,7 @@ class AWSCloudWatchLogs(AWSService):
                  remove_log_streams):
 
         self.sql_cloudwatch_create_table = """
-                                CREATE TABLE 
+                                CREATE TABLE
                                     {table_name} (
                                         aws_region 'text' NOT NULL,
                                         aws_log_group 'text' NOT NULL,
@@ -2295,7 +2356,7 @@ class AWSCloudWatchLogs(AWSService):
                                     '{end_time}');"""
 
         self.sql_cloudwatch_update = """
-                                UPDATE 
+                                UPDATE
                                     {table_name}
                                 SET
                                     next_token='{next_token}',
@@ -2314,8 +2375,8 @@ class AWSCloudWatchLogs(AWSService):
                             FROM
                                 '{table_name}'
                             WHERE
-                                aws_region='{aws_region}' AND 
-                                aws_log_group='{aws_log_group}' AND 
+                                aws_region='{aws_region}' AND
+                                aws_log_group='{aws_log_group}' AND
                                 aws_log_stream='{aws_log_stream}'"""
         self.sql_cloudwatch_select_logstreams = """
                             SELECT
@@ -2323,7 +2384,7 @@ class AWSCloudWatchLogs(AWSService):
                             FROM
                                 '{table_name}'
                             WHERE
-                                aws_region='{aws_region}' AND 
+                                aws_region='{aws_region}' AND
                                 aws_log_group='{aws_log_group}'
                             ORDER BY
                                 aws_log_stream;"""
@@ -2331,8 +2392,8 @@ class AWSCloudWatchLogs(AWSService):
                             DELETE FROM
                                 {table_name}
                             WHERE
-                                aws_region='{aws_region}' AND 
-                                aws_log_group='{aws_log_group}' AND 
+                                aws_region='{aws_region}' AND
+                                aws_log_group='{aws_log_group}' AND
                                 aws_log_stream='{aws_log_stream}';"""
 
         AWSService.__init__(self, access_key=access_key, secret_key=secret_key,
@@ -2639,8 +2700,8 @@ class AWSCloudWatchLogs(AWSService):
                 debug('No log streams were found for log group "{}"'.format(log_group), 1)
         except Exception:
             debug('++++ The specified "{}" log group does not exist or insufficient privileges to access it.'.format(log_group), 0)
-        finally:
-            return result_list
+
+        return result_list
 
     def purge_db(self, log_group):
         """Remove from AWS_Service.db any record for log streams that no longer exists on AWS CloudWatch.
@@ -2811,6 +2872,12 @@ def main(argv):
                 bucket_type = CiscoUmbrella
             elif options.type.lower() == 'waf':
                 bucket_type = AWSWAFBucket
+            elif options.type.lower() == 'alb':
+                bucket_type = AWSALBBucket
+            elif options.type.lower() == 'clb':
+                bucket_type = AWSCLBBucket
+            elif options.type.lower() == 'nlb':
+                bucket_type = AWSNLBBucket
             else:
                 raise Exception("Invalid type of bucket")
             bucket = bucket_type(reparse=options.reparse, access_key=options.access_key,

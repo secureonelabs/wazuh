@@ -37,6 +37,10 @@ typedef struct request_dump_t {
     int first_scan;
 } request_dump_t;
 
+#ifdef WIN32
+static HKEY wm_sca_sub_tree;
+#endif
+
 static const int RETURN_NOT_FOUND = 0;
 static const int RETURN_FOUND = 1;
 static const int RETURN_INVALID = 2;
@@ -109,7 +113,8 @@ const wm_context WM_SCA_CONTEXT = {
     SCA_WM_NAME,
     (wm_routine)wm_sca_main,
     (wm_routine)(void *)wm_sca_destroy,
-    (cJSON * (*)(const void *))wm_sca_dump
+    (cJSON * (*)(const void *))wm_sca_dump,
+    NULL
 };
 
 static unsigned int summary_passed = 0;
@@ -208,7 +213,7 @@ void * wm_sca_main(wm_sca_t * data) {
 
 #ifndef WIN32
 
-    data->queue = StartMQ(DEFAULTQPATH, WRITE, INFINITE_OPENQ_ATTEMPTS);
+    data->queue = StartMQ(DEFAULTQUEUE, WRITE, INFINITE_OPENQ_ATTEMPTS);
 
     if (data->queue < 0) {
         merror("Can't connect to queue.");
@@ -256,7 +261,7 @@ static int wm_sca_send_alert(wm_sca_t * data,cJSON *json_alert)
             close(data->queue);
         }
 
-        if ((data->queue = StartMQ(DEFAULTQPATH, WRITE, INFINITE_OPENQ_ATTEMPTS)) < 0) {
+        if ((data->queue = StartMQ(DEFAULTQUEUE, WRITE, INFINITE_OPENQ_ATTEMPTS)) < 0) {
             mwarn("Can't connect to queue.");
         } else {
             if(wm_sendmsg(data->msg_delay, data->queue, msg,WM_SCA_STAMP, SCA_MQ) < 0) {
@@ -297,9 +302,11 @@ static void wm_sca_send_policies_scanned(wm_sca_t * data) {
 
 static int wm_sca_start(wm_sca_t * data) {
     char * timestamp = NULL;
+    time_t time_start = 0;
+    time_t duration = 0;
 
     do {
-        const time_t time_sleep = sched_scan_get_time_until_next_scan(&(data->scan_config), WM_GCP_LOGTAG, data->scan_on_start);
+        const time_t time_sleep = sched_scan_get_time_until_next_scan(&(data->scan_config), WM_SCA_LOGTAG, data->scan_on_start);
 
         if (time_sleep) {
             const int next_scan_time = sched_get_next_scan_time(data->scan_config);
@@ -309,6 +316,7 @@ static int wm_sca_start(wm_sca_t * data) {
             w_sleep_until(next_scan_time);
         }
         mtinfo(WM_SCA_LOGTAG,"Starting Security Configuration Assessment scan.");
+        time_start = time(NULL);
 
         /* Do scan for every policy file */
         wm_sca_read_files(data);
@@ -316,7 +324,8 @@ static int wm_sca_start(wm_sca_t * data) {
         /* Send policies scanned for database purge on manager side */
         wm_sca_send_policies_scanned(data);
 
-        mtinfo(WM_SCA_LOGTAG, "Security Configuration Assessment scan finished. Duration: %d seconds.", (int)time_sleep);
+        duration = time(NULL) - time_start;
+        mtinfo(WM_SCA_LOGTAG, "Security Configuration Assessment scan finished. Duration: %d seconds.", (int)duration);
 
     } while(FOREVER());
 
@@ -406,7 +415,13 @@ static void wm_sca_read_files(wm_sca_t * data) {
                 id = -id;
             }
 #else
-            int id = wm_sys_get_random_id();
+            char random_id[RANDOM_LENGTH];
+            snprintf(random_id, RANDOM_LENGTH - 1, "%u%u", os_random(), os_random());
+            int id = atoi(random_id);
+
+            if (id < 0) {
+                id = -id;
+            }
 #endif
             int requirements_satisfied = 0;
 
@@ -2951,8 +2966,8 @@ static void * wm_sca_request_thread(wm_sca_t * data) {
 
     /* Create request socket */
     int cfga_queue;
-    if ((cfga_queue = StartMQ(CFGASSESSMENTQUEUEPATH, READ, 0)) < 0) {
-        merror(QUEUE_ERROR, CFGASSESSMENTQUEUEPATH, strerror(errno));
+    if ((cfga_queue = StartMQ(CFGAQUEUE, READ, 0)) < 0) {
+        merror(QUEUE_ERROR, CFGAQUEUE, strerror(errno));
         pthread_exit(NULL);
     }
 
@@ -2966,7 +2981,7 @@ static void * wm_sca_request_thread(wm_sca_t * data) {
 
         But rest assured, if the fork dies the memory is recalled by the OS.
     */
-    os_calloc(OS_MAXSTR + 1,sizeof(char),buffer);
+    os_calloc(OS_MAXSTR + 1, sizeof(char), buffer);
 
     while (1) {
         if (recv = OS_RecvUnix(cfga_queue, OS_MAXSTR, buffer),recv) {
@@ -3023,6 +3038,7 @@ static void * wm_sca_request_thread(wm_sca_t * data) {
         }
     }
 
+    os_free(buffer);
     return NULL;
 }
 #endif
