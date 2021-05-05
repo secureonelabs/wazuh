@@ -179,7 +179,6 @@ int init_auditd_socket(void) {
 void audit_create_rules_file() {
     char *real_path = NULL;
     directory_t *dir_it = NULL;
-    int i;
     FILE *fp;
 
     fp = fopen(AUDIT_RULES_FILE, "w");
@@ -229,6 +228,7 @@ void audit_create_rules_file() {
 
 void audit_rules_to_realtime() {
     char *real_path = NULL;
+    directory_t *dir_it = NULL;
     int found;
 
     // Initialize audit_rule_list
@@ -240,13 +240,13 @@ void audit_rules_to_realtime() {
         merror(FIM_ERROR_WHODATA_READ_RULE); // LCOV_EXCL_LINE
     }
 
-    for (int i = 0; syscheck.dir[i] != NULL; i++) {
-        if ((syscheck.opts[i] & WHODATA_ACTIVE) == 0) {
+    foreach_array(dir_it, syscheck.directories) {
+        if ((dir_it->options & WHODATA_ACTIVE) == 0) {
             continue;
         }
 
         found = 0;
-        real_path = fim_get_real_path(i);
+        real_path = fim_get_real_path(dir_it);
 
         if (search_audit_rule(real_path, WHODATA_PERMS, AUDIT_KEY) == 1) {
             free(real_path);
@@ -262,8 +262,8 @@ void audit_rules_to_realtime() {
 
         if (!found){
             mwarn(FIM_ERROR_WHODATA_ADD_DIRECTORY, real_path);
-            syscheck.opts[i] &= ~WHODATA_ACTIVE;
-            syscheck.opts[i] |= REALTIME_ACTIVE;
+            dir_it->options &= ~WHODATA_ACTIVE;
+            dir_it->options |= REALTIME_ACTIVE;
         }
 
         free(real_path);
