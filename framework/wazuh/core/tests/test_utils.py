@@ -1208,8 +1208,7 @@ def test_WazuhDBQuery_general_run(mock_socket_conn, mock_isfile, execute_value, 
 
 
 @pytest.mark.parametrize('execute_value, rbac_ids, negate, final_rbac_ids, expected_result', [
-    (
-    [{'id': 99}, {'id': 100}], ['001', '099', '101'], False, [{'id': 99}], {'items': [{'id': '099'}], 'totalItems': 1}),
+    ([{'id': 99}, {'id': 100}], ['001', '099', '101'], False, [{'id': 99}], {'items': [{'id': '099'}], 'totalItems': 1}),
     ([{'id': 1}], [], True, [{'id': 1}], {'items': [{'id': '001'}], 'totalItems': 1}),
     ([{'id': i} for i in range(30000)], [str(i).zfill(3) for i in range(15001)], True,
      [{'id': i} for i in range(15001, 30000)],
@@ -1548,12 +1547,12 @@ def test_filter_array_by_query(q, return_length):
 
 @pytest.mark.parametrize('select, required_fields, expected_result', [
     (['single_select', 'nested1.nested12.nested121'], {'required'}, {'required': None,
-                                                                     'single_select': None,
-                                                                     'nested1': {
-                                                                         'nested12': {
-                                                                             'nested121': None
-                                                                         }
-                                                                     }}),
+                                                                    'single_select': None,
+                                                                    'nested1': {
+                                                                        'nested12': {
+                                                                            'nested121': None
+                                                                        }
+                                                                    }}),
     (['single_select', 'noexists'], None, None),
     (['required.noexists1.noexists2'], None, None)
 ])
