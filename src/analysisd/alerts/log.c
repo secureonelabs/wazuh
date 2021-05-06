@@ -183,7 +183,7 @@ void OS_Log(Eventinfo *lf)
 
     /* FIM events */
 
-    if (strcmp(extract_module_from_location(lf->location), SYSCHECK) == 0) {
+    if (lf->decoder_info->name != NULL && strncmp(lf->decoder_info->name, "syscheck_", 9) == 0) {
         fwrite("Attributes:\n", sizeof(char), 12, _aflog);
 
         if (lf->fields[FIM_SIZE].value && *lf->fields[FIM_SIZE].value != '\0') {
@@ -279,7 +279,7 @@ void OS_Log(Eventinfo *lf)
 
     // Dynamic fields, except for syscheck events
 
-    if (strcmp(extract_module_from_location(lf->location), SYSCHECK) != 0) {
+    if (lf->decoder_info->name != NULL && strncmp(lf->decoder_info->name, "syscheck_", 9) != 0) {
         for (i = 0; i < lf->nfields; i++) {
             if (lf->fields[i].value != NULL && *lf->fields[i].value != '\0') {
                 fprintf(_aflog, "%s: %s\n", lf->fields[i].key, lf->fields[i].value);
