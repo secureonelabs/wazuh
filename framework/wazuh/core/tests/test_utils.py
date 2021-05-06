@@ -1547,12 +1547,12 @@ def test_filter_array_by_query(q, return_length):
 
 @pytest.mark.parametrize('select, required_fields, expected_result', [
     (['single_select', 'nested1.nested12.nested121'], {'required'}, {'required': None,
-                                                                    'single_select': None,
-                                                                    'nested1': {
-                                                                        'nested12': {
-                                                                            'nested121': None
-                                                                        }
-                                                                    }}),
+                                                                   'single_select': None,
+                                                                   'nested1': {
+                                                                       'nested12': {
+                                                                           'nested121': None
+                                                                       }
+                                                                   }}),
     (['single_select', 'noexists'], None, None),
     (['required.noexists1.noexists2'], None, None)
 ])
