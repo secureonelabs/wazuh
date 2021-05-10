@@ -105,3 +105,27 @@ BOOL wrap_GetFileTime(HANDLE     hFile,
     }
     return mock_type(BOOL);
 }
+
+HANDLE wrap_FindFirstFile(LPCSTR lpFileName,  LPWIN32_FIND_DATA lpFindFileData) {
+    char *file_name;
+    check_expected(lpFileName);
+
+    file_name = mock_type(char *);
+    if (file_name != NULL) {
+        strcpy(lpFindFileData->cFileName, file_name);
+        lpFindFileData->dwFileAttributes = mock_type(DWORD);
+    }
+
+    return mock_type(HANDLE);
+}
+
+BOOL wrap_FindNextFileA(HANDLE hFindFile, LPWIN32_FIND_DATA lpFindFileData) {
+    char *file_name;
+    check_expected(hFindFile);
+    file_name = mock_type(char *);
+    if (file_name != NULL) {
+        strcpy(lpFindFileData->cFileName, file_name);
+        lpFindFileData->dwFileAttributes = mock_type(DWORD);
+    }
+    return mock_type(BOOL);
+}
